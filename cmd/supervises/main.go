@@ -26,7 +26,7 @@ type state struct {
 }
 
 const (
-	version = "0.1.0"
+	version = "0.1.1"
 )
 
 var (
@@ -130,11 +130,11 @@ func (s *state) supervise(args []string) error {
 				}
 			}
 			for {
-				if err := s.run(ctx, argv); err != nil {
-					if s.interrupted {
-						return err
-					}
-
+				err := s.run(ctx, argv)
+				if s.interrupted {
+					return err
+				}
+				if err != nil {
 					var ee *exitError
 					e := err
 					if errors.As(err, &ee) {
