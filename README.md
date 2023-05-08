@@ -1,6 +1,6 @@
 # SYNOPSIS
 
-supervises [*options*] "<command> <...>" "..."
+supervises [*options*] "*command* *...*" "..."
 
 # DESCRIPTION
 
