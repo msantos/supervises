@@ -47,7 +47,7 @@ Options:
 }
 
 func main() {
-	l := slog.New(slog.HandlerOptions{Level: programLevel}.NewTextHandler(os.Stderr).
+	l := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: programLevel}).
 		WithAttrs([]slog.Attr{slog.String("arg0", path.Base(os.Args[0]))}))
 	slog.SetDefault(l)
 
