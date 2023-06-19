@@ -19,10 +19,10 @@ import (
 )
 
 type state struct {
-	l           *slog.Logger
-	signal      syscall.Signal
-	b           broadcast.Broadcaster
-	interrupted bool
+	l      *slog.Logger
+	signal syscall.Signal
+	b      broadcast.Broadcaster
+	cancel context.CancelFunc
 }
 
 const (
@@ -73,9 +73,11 @@ func main() {
 		l:      l,
 	}
 
-	go s.sighandler()
+	ctx, cancel := context.WithCancel(context.Background())
 
-	if err := s.supervise(flag.Args()); err != nil {
+	go s.sighandler(cancel)
+
+	if err := s.supervise(ctx, flag.Args()); err != nil {
 		var ee *exitError
 
 		if !errors.As(err, &ee) {
@@ -88,9 +90,7 @@ func main() {
 	}
 }
 
-func (s *state) sighandler() {
-	defer s.b.Close()
-
+func (s *state) sighandler(cancel context.CancelFunc) {
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch,
 		syscall.SIGHUP,
@@ -105,9 +105,9 @@ func (s *state) sighandler() {
 	count := 0
 	for v := range sigch {
 		if v == syscall.SIGINT {
-			s.interrupted = true
 			if count > 0 {
-				v = syscall.SIGKILL
+				cancel()
+				return
 			}
 			count++
 		}
@@ -115,8 +115,8 @@ func (s *state) sighandler() {
 	}
 }
 
-func (s *state) supervise(args []string) error {
-	g, ctx := errgroup.WithContext(context.Background())
+func (s *state) supervise(ctx context.Context, args []string) error {
+	g, ctx := errgroup.WithContext(ctx)
 
 	for _, v := range args {
 		v := v
@@ -131,8 +131,10 @@ func (s *state) supervise(args []string) error {
 			}
 			for {
 				err := s.run(ctx, argv)
-				if s.interrupted {
+				select {
+				case <-ctx.Done():
 					return err
+				default:
 				}
 				if err != nil {
 					var ee *exitError
