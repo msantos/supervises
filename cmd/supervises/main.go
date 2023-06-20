@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,7 +27,7 @@ type state struct {
 }
 
 const (
-	version = "0.1.1"
+	version = "0.1.2"
 )
 
 var (
@@ -96,6 +97,7 @@ func (s *state) sighandler(cancel context.CancelFunc) {
 		syscall.SIGHUP,
 		syscall.SIGINT,
 		syscall.SIGQUIT,
+		syscall.SIGALRM,
 		syscall.SIGTERM,
 		syscall.SIGUSR1,
 		syscall.SIGUSR2,
@@ -121,7 +123,7 @@ func (s *state) supervise(ctx context.Context, args []string) error {
 	for _, v := range args {
 		v := v
 		g.Go(func() error {
-			argv, err := shellwords.Parse(v)
+			argv, err := s.argv(v)
 			if err != nil {
 				return &exitError{
 					err:    err,
@@ -154,6 +156,13 @@ func (s *state) supervise(ctx context.Context, args []string) error {
 	}
 
 	return g.Wait()
+}
+
+func (s *state) argv(v string) ([]string, error) {
+	if strings.HasPrefix(v, "@") {
+		return []string{"/bin/sh", "-c", strings.TrimPrefix(v, "@")}, nil
+	}
+	return shellwords.Parse(v)
 }
 
 type exitError struct {
