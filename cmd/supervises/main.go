@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"codeberg.org/msantos/supervises/internal/stdio"
 	"github.com/dustin/go-broadcast"
 	"github.com/mattn/go-shellwords"
 	"golang.org/x/exp/slog"
@@ -20,14 +21,16 @@ import (
 )
 
 type state struct {
-	l      *slog.Logger
-	signal syscall.Signal
-	b      broadcast.Broadcaster
-	cancel context.CancelFunc
+	l        *slog.Logger
+	signal   syscall.Signal
+	b        broadcast.Broadcaster
+	cancel   context.CancelFunc
+	redirect stdio.Stdio
+	null     *os.File
 }
 
 const (
-	version = "0.1.2"
+	version = "0.2.0"
 )
 
 var (
@@ -41,6 +44,27 @@ func usage() {
 Usage: %s "<cmd> <args>" [...]
 
 Command line supervisor.
+
+Sigils:
+
+	@: run in shell
+
+		supervises @'nc -l 8080 >nc.log'
+
+	=: redirect stdout/stderr to /dev/null
+
+		# equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
+		supervises ='nc -l 8080'
+
+	=1: redirect stdout to /dev/null
+
+		# equivalent to: supervises @'nc -l 8080 >/dev/null'
+		supervises =1'nc -l 8080'
+
+	=2: redirect stderr to /dev/null
+
+		# equivalent to: supervises @'nc -l 8080 2>/dev/null'
+		supervises =2'nc -l 8080'
 
 Options:
 `, path.Base(os.Args[0]), version, os.Args[0])
@@ -68,10 +92,17 @@ func main() {
 		os.Exit(2)
 	}
 
+	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0755)
+	if err != nil {
+		l.Error(err.Error())
+		os.Exit(1)
+	}
+
 	s := &state{
 		signal: syscall.Signal(*sig),
 		b:      broadcast.NewBroadcaster(flag.NArg()),
 		l:      l,
+		null:   null,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,10 +190,34 @@ func (s *state) supervise(ctx context.Context, args []string) error {
 }
 
 func (s *state) argv(v string) ([]string, error) {
-	if strings.HasPrefix(v, "@") {
+	switch {
+	case strings.HasPrefix(v, "@"):
 		return []string{"/bin/sh", "-c", strings.TrimPrefix(v, "@")}, nil
+	case strings.HasPrefix(v, "=1"):
+		s.redirect = stdio.Stdout
+		v = strings.TrimPrefix(v, "=1")
+	case strings.HasPrefix(v, "=2"):
+		s.redirect = stdio.Stderr
+		v = strings.TrimPrefix(v, "=2")
+	case strings.HasPrefix(v, "="):
+		s.redirect = stdio.Stdout | stdio.Stderr
+		v = strings.TrimPrefix(v, "=")
 	}
 	return shellwords.Parse(v)
+}
+
+func (s *state) stdout() *os.File {
+	if s.redirect&stdio.Stdout != 0 {
+		return s.null
+	}
+	return os.Stdout
+}
+
+func (s *state) stderr() *os.File {
+	if s.redirect&stdio.Stderr != 0 {
+		return s.null
+	}
+	return os.Stderr
 }
 
 type exitError struct {
@@ -199,8 +254,8 @@ func (s *state) run(ctx context.Context, argv []string) error {
 
 	cmd := exec.CommandContext(ctx, arg0, argv[1:]...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = s.stdout()
+	cmd.Stderr = s.stderr()
 	cmd.Env = os.Environ()
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(s.signal)
