@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -13,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"codeberg.org/msantos/supervises/internal/stdio"
 	"github.com/dustin/go-broadcast"
 	"github.com/mattn/go-shellwords"
 	"golang.org/x/exp/slog"
@@ -21,12 +21,10 @@ import (
 )
 
 type state struct {
-	l        *slog.Logger
-	signal   syscall.Signal
-	b        broadcast.Broadcaster
-	cancel   context.CancelFunc
-	redirect stdio.Stdio
-	null     *os.File
+	l      *slog.Logger
+	signal syscall.Signal
+	b      broadcast.Broadcaster
+	cancel context.CancelFunc
 }
 
 const (
@@ -36,7 +34,8 @@ const (
 var (
 	programLevel = new(slog.LevelVar)
 
-	ErrExitFailure = errors.New("failed")
+	ErrExitFailure    = errors.New("failed")
+	ErrInvalidCommand = errors.New("invalid command")
 )
 
 func usage() {
@@ -51,17 +50,17 @@ Sigils:
 
 		supervises @'nc -l 8080 >nc.log'
 
-	=: redirect stdout/stderr to /dev/null
+	=: discard stdout/stderr
 
 		# equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
 		supervises ='nc -l 8080'
 
-	=1: redirect stdout to /dev/null
+	=1: discard stdout
 
 		# equivalent to: supervises @'nc -l 8080 >/dev/null'
 		supervises =1'nc -l 8080'
 
-	=2: redirect stderr to /dev/null
+	=2: discard stderr
 
 		# equivalent to: supervises @'nc -l 8080 2>/dev/null'
 		supervises =2'nc -l 8080'
@@ -92,17 +91,10 @@ func main() {
 		os.Exit(2)
 	}
 
-	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0755)
-	if err != nil {
-		l.Error(err.Error())
-		os.Exit(1)
-	}
-
 	s := &state{
 		signal: syscall.Signal(*sig),
 		b:      broadcast.NewBroadcaster(flag.NArg()),
 		l:      l,
-		null:   null,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -159,7 +151,7 @@ func (s *state) supervise(ctx context.Context, args []string) error {
 				return &exitError{
 					err:    err,
 					status: 2,
-					argv:   argv,
+					argv:   argv.argv,
 				}
 			}
 			for {
@@ -189,35 +181,42 @@ func (s *state) supervise(ctx context.Context, args []string) error {
 	return g.Wait()
 }
 
-func (s *state) argv(v string) ([]string, error) {
+type Argv struct {
+	argv []string
+	out  io.Writer
+	err  io.Writer
+}
+
+func (s *state) argv(v string) (Argv, error) {
+	cmd := Argv{
+		out: os.Stdout,
+		err: os.Stderr,
+	}
+
 	switch {
 	case strings.HasPrefix(v, "@"):
-		return []string{"/bin/sh", "-c", strings.TrimPrefix(v, "@")}, nil
+		cmd.argv = []string{"/bin/sh", "-c", strings.TrimPrefix(v, "@")}
+		return cmd, nil
 	case strings.HasPrefix(v, "=1"):
-		s.redirect = stdio.Stdout
+		cmd.out = io.Discard
 		v = strings.TrimPrefix(v, "=1")
 	case strings.HasPrefix(v, "=2"):
-		s.redirect = stdio.Stderr
+		cmd.err = io.Discard
 		v = strings.TrimPrefix(v, "=2")
 	case strings.HasPrefix(v, "="):
-		s.redirect = stdio.Stdout | stdio.Stderr
+		cmd.out = io.Discard
+		cmd.err = io.Discard
 		v = strings.TrimPrefix(v, "=")
 	}
-	return shellwords.Parse(v)
-}
-
-func (s *state) stdout() *os.File {
-	if s.redirect&stdio.Stdout != 0 {
-		return s.null
+	if len(v) == 0 {
+		return Argv{}, ErrInvalidCommand
 	}
-	return os.Stdout
-}
-
-func (s *state) stderr() *os.File {
-	if s.redirect&stdio.Stderr != 0 {
-		return s.null
+	argv, err := shellwords.Parse(v)
+	if err != nil {
+		return Argv{}, err
 	}
-	return os.Stderr
+	cmd.argv = argv
+	return cmd, nil
 }
 
 type exitError struct {
@@ -242,20 +241,20 @@ func (e *exitError) Argv() []string {
 	return e.argv
 }
 
-func (s *state) run(ctx context.Context, argv []string) error {
-	arg0, err := exec.LookPath(argv[0])
+func (s *state) run(ctx context.Context, argv Argv) error {
+	arg0, err := exec.LookPath(argv.argv[0])
 	if err != nil {
 		return &exitError{
-			argv:   argv,
+			argv:   argv.argv,
 			err:    err,
 			status: 127,
 		}
 	}
 
-	cmd := exec.CommandContext(ctx, arg0, argv[1:]...)
+	cmd := exec.CommandContext(ctx, arg0, argv.argv[1:]...)
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = s.stdout()
-	cmd.Stderr = s.stderr()
+	cmd.Stdout = argv.out
+	cmd.Stderr = argv.err
 	cmd.Env = os.Environ()
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(s.signal)
@@ -271,7 +270,7 @@ func (s *state) run(ctx context.Context, argv []string) error {
 			status = 126
 		}
 		return &exitError{
-			argv:   argv,
+			argv:   argv.argv,
 			err:    err,
 			status: status,
 		}
@@ -282,7 +281,7 @@ func (s *state) run(ctx context.Context, argv []string) error {
 		waitch <- cmd.Wait()
 	}()
 
-	return s.waitpid(waitch, cmd, argv)
+	return s.waitpid(waitch, cmd, argv.argv)
 }
 
 func (s *state) waitpid(waitch <-chan error, cmd *exec.Cmd, argv []string) error {
