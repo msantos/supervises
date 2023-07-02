@@ -56,7 +56,7 @@ func WithNotifySignals(sigs ...os.Signal) Option {
 }
 
 // New returns configuration for supervisors.
-func New(ctx context.Context, opt ...Option) *Opt {
+func New(opt ...Option) *Opt {
 	o := &Opt{
 		signals: []os.Signal{
 			syscall.SIGHUP,
@@ -99,7 +99,7 @@ func (o *Opt) sighandler(ctx context.Context) error {
 	}
 }
 
-func (o *Opt) Supervise(ctx context.Context, args []string) error {
+func (o *Opt) Supervise(ctx context.Context, args ...string) error {
 	o.b = broadcast.NewBroadcaster(len(args))
 	defer o.b.Close()
 

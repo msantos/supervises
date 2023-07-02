@@ -83,12 +83,11 @@ func main() {
 	}
 
 	s := supervises.New(
-		context.Background(),
 		supervises.WithCancelSignal(syscall.Signal(*sig)),
 		supervises.WithLog(log),
 	)
 
-	if err := s.Supervise(context.Background(), flag.Args()); err != nil {
+	if err := s.Supervise(context.Background(), flag.Args()...); err != nil {
 		var ee *supervises.ExitError
 
 		if !errors.As(err, &ee) {
