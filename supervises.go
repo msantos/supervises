@@ -24,7 +24,10 @@ var (
 )
 
 type Opt struct {
-	b            broadcast.Broadcaster
+	uctx         context.Context
+	ctx          context.Context
+	cancel       context.CancelFunc
+	g            *errgroup.Group
 	cancelSignal syscall.Signal
 	signals      []os.Signal
 	log          func(s ...string)
@@ -56,7 +59,7 @@ func WithNotifySignals(sigs ...os.Signal) Option {
 }
 
 // New returns configuration for supervisors.
-func New(opt ...Option) *Opt {
+func New(ctx context.Context, opt ...Option) *Opt {
 	o := &Opt{
 		signals: []os.Signal{
 			syscall.SIGHUP,
@@ -74,10 +77,110 @@ func New(opt ...Option) *Opt {
 		fn(o)
 	}
 
+	o.uctx = ctx
+	o.Reset()
+
 	return o
 }
 
-func (o *Opt) sighandler(ctx context.Context) error {
+func (o *Opt) Reset() {
+	if o.cancel != nil {
+		o.cancel()
+	}
+
+	cCtx, cancel := context.WithCancel(o.uctx)
+	g, ctx := errgroup.WithContext(cCtx)
+
+	o.g = g
+	o.ctx = ctx
+	o.cancel = cancel
+}
+
+func (o *Opt) Context() context.Context {
+	return o.ctx
+}
+
+type Cmd struct {
+	Path        string
+	Args        []string
+	Env         []string
+	Dir         string
+	Stdin       io.Reader
+	Stdout      io.Writer
+	Stderr      io.Writer
+	ExtraFiles  []*os.File
+	SysProcAttr *syscall.SysProcAttr
+}
+
+func (c *Cmd) String() string {
+	b := new(strings.Builder)
+	b.WriteString(c.Path)
+	for _, a := range c.Args[1:] {
+		b.WriteByte(' ')
+		b.WriteString(a)
+	}
+	return b.String()
+}
+
+func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
+	cmds := make([]*Cmd, 0, len(args))
+	for _, v := range args {
+		cmd, err := o.cmd(v)
+		if err != nil {
+			return cmds, err
+		}
+		cmds = append(cmds, cmd)
+	}
+	return cmds, nil
+}
+
+func (o *Opt) cmd(arg string) (*Cmd, error) {
+	var stdout io.Writer = os.Stdout
+	var stderr io.Writer = os.Stderr
+
+	switch {
+	case strings.HasPrefix(arg, "@"):
+		return &Cmd{Path: "/bin/sh", Args: []string{"-c", strings.TrimPrefix(arg, "@")}}, nil
+	case strings.HasPrefix(arg, "=1"):
+		stdout = io.Discard
+		arg = strings.TrimPrefix(arg, "=1")
+	case strings.HasPrefix(arg, "=2"):
+		stderr = io.Discard
+		arg = strings.TrimPrefix(arg, "=2")
+	case strings.HasPrefix(arg, "="):
+		stdout = io.Discard
+		stderr = io.Discard
+		arg = strings.TrimPrefix(arg, "=")
+	}
+
+	argv, err := shellwords.Parse(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(argv) == 0 {
+		return nil, ErrInvalidCommand
+	}
+
+	arg0, err := exec.LookPath(argv[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return &Cmd{
+		Path:   arg0,
+		Args:   argv[1:],
+		Env:    os.Environ(),
+		Stdin:  os.Stdin,
+		Stdout: stdout,
+		Stderr: stderr,
+		SysProcAttr: &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		},
+	}, nil
+}
+
+func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, o.signals...)
 	defer signal.Stop(sigch)
@@ -94,36 +197,26 @@ func (o *Opt) sighandler(ctx context.Context) error {
 				}
 				count++
 			}
-			o.b.Submit(v)
+			b.Submit(v)
 		}
 	}
 }
 
-func (o *Opt) Supervise(ctx context.Context, args ...string) error {
-	o.b = broadcast.NewBroadcaster(len(args))
-	defer o.b.Close()
+func (o *Opt) Supervise(args ...*Cmd) error {
+	b := broadcast.NewBroadcaster(len(args))
+	defer b.Close()
 
-	g, ctx := errgroup.WithContext(ctx)
-
-	g.Go(func() error {
-		return o.sighandler(ctx)
+	o.g.Go(func() error {
+		return o.sighandler(o.ctx, b)
 	})
 
 	for _, v := range args {
 		v := v
-		g.Go(func() error {
-			argv, err := o.argv(v)
-			if err != nil {
-				return &ExitError{
-					err:    err,
-					status: 2,
-					argv:   argv.argv,
-				}
-			}
+		o.g.Go(func() error {
 			for {
-				err := o.run(ctx, argv)
+				err := o.run(b, v)
 				select {
-				case <-ctx.Done():
+				case <-o.ctx.Done():
 					return err
 				default:
 				}
@@ -137,61 +230,19 @@ func (o *Opt) Supervise(ctx context.Context, args ...string) error {
 						return err
 					}
 
-					o.log("argv", argv.String(), "error", err.Error())
+					o.log("argv", v.String(), "error", err.Error())
 				}
 				time.Sleep(time.Second)
 			}
 		})
 	}
 
-	return g.Wait()
-}
-
-type Argv struct {
-	argv []string
-	out  io.Writer
-	err  io.Writer
-}
-
-func (argv Argv) String() string {
-	return strings.Join(argv.argv, " ")
-}
-
-func (o *Opt) argv(v string) (Argv, error) {
-	cmd := Argv{
-		out: os.Stdout,
-		err: os.Stderr,
-	}
-
-	switch {
-	case strings.HasPrefix(v, "@"):
-		cmd.argv = []string{"/bin/sh", "-c", strings.TrimPrefix(v, "@")}
-		return cmd, nil
-	case strings.HasPrefix(v, "=1"):
-		cmd.out = io.Discard
-		v = strings.TrimPrefix(v, "=1")
-	case strings.HasPrefix(v, "=2"):
-		cmd.err = io.Discard
-		v = strings.TrimPrefix(v, "=2")
-	case strings.HasPrefix(v, "="):
-		cmd.out = io.Discard
-		cmd.err = io.Discard
-		v = strings.TrimPrefix(v, "=")
-	}
-	if len(v) == 0 {
-		return Argv{}, ErrInvalidCommand
-	}
-	argv, err := shellwords.Parse(v)
-	if err != nil {
-		return Argv{}, err
-	}
-	cmd.argv = argv
-	return cmd, nil
+	return o.g.Wait()
 }
 
 type ExitError struct {
 	err    error
-	argv   []string
+	cmd    *exec.Cmd
 	status int
 }
 
@@ -208,31 +259,19 @@ func (e *ExitError) ExitCode() int {
 }
 
 func (e *ExitError) Argv() []string {
-	return e.argv
+	return append([]string{e.cmd.Path}, e.cmd.Args...)
 }
 
-func (o *Opt) run(ctx context.Context, argv Argv) error {
-	arg0, err := exec.LookPath(argv.argv[0])
-	if err != nil {
-		return &ExitError{
-			argv:   argv.argv,
-			err:    err,
-			status: 127,
-		}
-	}
-
-	cmd := exec.CommandContext(ctx, arg0, argv.argv[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = argv.out
-	cmd.Stderr = argv.err
-	cmd.Env = os.Environ()
+func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) error {
+	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args...)
+	cmd.Stdin = argv.Stdin
+	cmd.Stdout = argv.Stdout
+	cmd.Stderr = argv.Stderr
+	cmd.Env = argv.Env
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(o.cancelSignal)
 	}
-
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Pdeathsig: syscall.SIGKILL,
-	}
+	cmd.SysProcAttr = argv.SysProcAttr
 
 	if err := cmd.Start(); err != nil {
 		status := cmd.ProcessState.ExitCode()
@@ -240,7 +279,7 @@ func (o *Opt) run(ctx context.Context, argv Argv) error {
 			status = 126
 		}
 		return &ExitError{
-			argv:   argv.argv,
+			cmd:    cmd,
 			err:    err,
 			status: status,
 		}
@@ -251,15 +290,15 @@ func (o *Opt) run(ctx context.Context, argv Argv) error {
 		waitch <- cmd.Wait()
 	}()
 
-	return o.waitpid(waitch, cmd, argv.argv)
+	return o.waitpid(waitch, b, cmd)
 }
 
-func (o *Opt) waitpid(waitch <-chan error, cmd *exec.Cmd, argv []string) error {
+func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cmd) error {
 	var ee *exec.ExitError
 
 	ch := make(chan interface{})
-	o.b.Register(ch)
-	defer o.b.Unregister(ch)
+	b.Register(ch)
+	defer b.Unregister(ch)
 
 	for {
 		select {
@@ -279,7 +318,7 @@ func (o *Opt) waitpid(waitch <-chan error, cmd *exec.Cmd, argv []string) error {
 
 			if !errors.As(err, &ee) {
 				return &ExitError{
-					argv:   argv,
+					cmd:    cmd,
 					status: 128,
 					err:    err,
 				}
@@ -288,7 +327,7 @@ func (o *Opt) waitpid(waitch <-chan error, cmd *exec.Cmd, argv []string) error {
 			waitStatus, ok := ee.Sys().(syscall.WaitStatus)
 			if !ok {
 				return &ExitError{
-					argv:   argv,
+					cmd:    cmd,
 					status: 128,
 					err:    err,
 				}
@@ -296,14 +335,14 @@ func (o *Opt) waitpid(waitch <-chan error, cmd *exec.Cmd, argv []string) error {
 
 			if waitStatus.Signaled() {
 				return &ExitError{
-					argv:   argv,
+					cmd:    cmd,
 					status: 128 + int(waitStatus.Signal()),
 					err:    err,
 				}
 			}
 
 			return &ExitError{
-				argv:   argv,
+				cmd:    cmd,
 				status: waitStatus.ExitStatus(),
 				err:    ErrExitFailure,
 			}
