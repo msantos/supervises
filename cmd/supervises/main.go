@@ -88,15 +88,20 @@ func main() {
 		supervises.WithLog(log),
 	)
 
+	var ee *supervises.ExitError
+
 	cmd, err := s.Cmd(flag.Args()...)
 	if err != nil {
-		l.Error("command failed", "error", err)
-		os.Exit(127)
+		if !errors.As(err, &ee) {
+			l.Debug("command failed", "error", err)
+			os.Exit(126)
+		}
+
+		l.Error("command failed", "argv", ee.Argv(), "status", ee.ExitCode(), "error", err)
+		os.Exit(ee.ExitCode())
 	}
 
 	if err := s.Supervise(cmd...); err != nil {
-		var ee *supervises.ExitError
-
 		if !errors.As(err, &ee) {
 			l.Debug("command failed", "error", err)
 			os.Exit(128)

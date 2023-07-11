@@ -115,7 +115,7 @@ type Cmd struct {
 func (c *Cmd) String() string {
 	b := new(strings.Builder)
 	b.WriteString(c.Path)
-	for _, a := range c.Args[1:] {
+	for _, a := range c.Args {
 		b.WriteByte(' ')
 		b.WriteString(a)
 	}
@@ -135,49 +135,62 @@ func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
 }
 
 func (o *Opt) cmd(arg string) (*Cmd, error) {
-	var stdout io.Writer = os.Stdout
-	var stderr io.Writer = os.Stderr
+	c := &Cmd{
+		Path:   "/bin/sh",
+		Args:   []string{"-c", strings.TrimPrefix(arg, "@")},
+		Env:    os.Environ(),
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		SysProcAttr: &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		},
+	}
 
 	switch {
 	case strings.HasPrefix(arg, "@"):
-		return &Cmd{Path: "/bin/sh", Args: []string{"-c", strings.TrimPrefix(arg, "@")}}, nil
+		c.Path = "/bin/sh"
+		c.Args = []string{"-c", strings.TrimPrefix(arg, "@")}
+		return c, nil
 	case strings.HasPrefix(arg, "=1"):
-		stdout = io.Discard
+		c.Stdout = io.Discard
 		arg = strings.TrimPrefix(arg, "=1")
 	case strings.HasPrefix(arg, "=2"):
-		stderr = io.Discard
+		c.Stderr = io.Discard
 		arg = strings.TrimPrefix(arg, "=2")
 	case strings.HasPrefix(arg, "="):
-		stdout = io.Discard
-		stderr = io.Discard
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
 		arg = strings.TrimPrefix(arg, "=")
 	}
 
 	argv, err := shellwords.Parse(arg)
 	if err != nil {
-		return nil, err
+		return nil, &ExitError{
+			err:    err,
+			status: 2,
+		}
 	}
 
 	if len(argv) == 0 {
-		return nil, ErrInvalidCommand
+		return nil, &ExitError{
+			err:    ErrInvalidCommand,
+			status: 2,
+		}
 	}
 
 	arg0, err := exec.LookPath(argv[0])
 	if err != nil {
-		return nil, err
+		return nil, &ExitError{
+			err:    err,
+			status: 127,
+		}
 	}
 
-	return &Cmd{
-		Path:   arg0,
-		Args:   argv[1:],
-		Env:    os.Environ(),
-		Stdin:  os.Stdin,
-		Stdout: stdout,
-		Stderr: stderr,
-		SysProcAttr: &syscall.SysProcAttr{
-			Pdeathsig: syscall.SIGKILL,
-		},
-	}, nil
+	c.Path = arg0
+	c.Args = argv[1:]
+
+	return c, nil
 }
 
 func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
@@ -259,6 +272,9 @@ func (e *ExitError) ExitCode() int {
 }
 
 func (e *ExitError) Argv() []string {
+	if e.cmd == nil {
+		return []string{""}
+	}
 	return append([]string{e.cmd.Path}, e.cmd.Args...)
 }
 
