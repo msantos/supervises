@@ -167,6 +167,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	argv, err := shellwords.Parse(arg)
 	if err != nil {
 		return nil, &ExitError{
+			argv:   arg,
 			err:    err,
 			status: 2,
 		}
@@ -174,6 +175,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 
 	if len(argv) == 0 {
 		return nil, &ExitError{
+			argv:   arg,
 			err:    ErrInvalidCommand,
 			status: 2,
 		}
@@ -182,6 +184,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	arg0, err := exec.LookPath(argv[0])
 	if err != nil {
 		return nil, &ExitError{
+			argv:   arg,
 			err:    err,
 			status: 127,
 		}
@@ -254,6 +257,7 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 }
 
 type ExitError struct {
+	argv   string
 	err    error
 	cmd    *exec.Cmd
 	status int
@@ -271,11 +275,11 @@ func (e *ExitError) ExitCode() int {
 	return e.status
 }
 
-func (e *ExitError) Argv() []string {
-	if e.cmd == nil {
-		return []string{""}
+func (e *ExitError) String() string {
+	if e.cmd != nil {
+		return e.cmd.String()
 	}
-	return append([]string{e.cmd.Path}, e.cmd.Args...)
+	return e.argv
 }
 
 func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) error {

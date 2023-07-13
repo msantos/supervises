@@ -97,7 +97,7 @@ func main() {
 			os.Exit(126)
 		}
 
-		l.Error("command failed", "argv", ee.Argv(), "status", ee.ExitCode(), "error", err)
+		l.Error("command failed", "argv", ee.String(), "status", ee.ExitCode(), "error", err)
 		os.Exit(ee.ExitCode())
 	}
 
@@ -107,7 +107,7 @@ func main() {
 			os.Exit(128)
 		}
 
-		l.Debug("command failed", "argv", ee.Argv(), "status", ee.ExitCode(), "error", err)
+		l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode(), "error", err)
 		os.Exit(ee.ExitCode())
 	}
 }
