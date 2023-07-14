@@ -115,7 +115,7 @@ type Cmd struct {
 func (c *Cmd) String() string {
 	b := new(strings.Builder)
 	b.WriteString(c.Path)
-	for _, a := range c.Args {
+	for _, a := range c.Args[1:] {
 		b.WriteByte(' ')
 		b.WriteString(a)
 	}
@@ -136,8 +136,6 @@ func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
 
 func (o *Opt) cmd(arg string) (*Cmd, error) {
 	c := &Cmd{
-		Path:   "/bin/sh",
-		Args:   []string{"-c", strings.TrimPrefix(arg, "@")},
 		Env:    os.Environ(),
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
@@ -150,7 +148,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	switch {
 	case strings.HasPrefix(arg, "@"):
 		c.Path = "/bin/sh"
-		c.Args = []string{"-c", strings.TrimPrefix(arg, "@")}
+		c.Args = []string{c.Path, "-c", strings.TrimPrefix(arg, "@")}
 		return c, nil
 	case strings.HasPrefix(arg, "=1"):
 		c.Stdout = io.Discard
@@ -191,7 +189,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	}
 
 	c.Path = arg0
-	c.Args = argv[1:]
+	c.Args = argv
 
 	return c, nil
 }
@@ -283,7 +281,7 @@ func (e *ExitError) String() string {
 }
 
 func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) error {
-	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args...)
+	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args[1:]...)
 	cmd.Stdin = argv.Stdin
 	cmd.Stdout = argv.Stdout
 	cmd.Stderr = argv.Stderr
