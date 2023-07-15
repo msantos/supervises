@@ -30,13 +30,14 @@ type Opt struct {
 	g            *errgroup.Group
 	cancelSignal syscall.Signal
 	signals      []os.Signal
+	retry        func(*Cmd, error) error
 	log          func(s ...string)
 }
 
 type Option func(*Opt)
 
 // WithLog sets the debug logger.
-func WithLog(log func(s ...string)) Option {
+func WithLog(log func(...string)) Option {
 	return func(o *Opt) {
 		if log != nil {
 			o.log = log
@@ -58,6 +59,15 @@ func WithNotifySignals(sigs ...os.Signal) Option {
 	}
 }
 
+// WithRetry sets the retry behaviour.
+func WithRetry(retry func(*Cmd, error) error) Option {
+	return func(o *Opt) {
+		if retry != nil {
+			o.retry = retry
+		}
+	}
+}
+
 // New returns configuration for supervisors.
 func New(ctx context.Context, opt ...Option) *Opt {
 	o := &Opt{
@@ -71,6 +81,10 @@ func New(ctx context.Context, opt ...Option) *Opt {
 			syscall.SIGUSR2,
 		},
 		log: func(s ...string) {},
+		retry: func(_ *Cmd, _ error) error {
+			time.Sleep(time.Second)
+			return nil
+		},
 	}
 
 	for _, fn := range opt {
@@ -246,7 +260,9 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 
 					o.log("argv", v.String(), "error", err.Error())
 				}
-				time.Sleep(time.Second)
+				if rerr := o.retry(v, err); rerr != nil {
+					return rerr
+				}
 			}
 		})
 	}
