@@ -65,7 +65,7 @@ type retryState struct {
 	count int
 }
 
-func (r *retryState) retry(c *supervises.Cmd, cerr error) error {
+func (r *retryState) retry(c *supervises.Cmd, ee *supervises.ExitError) error {
 	if r.count > 0 {
 		return ErrRetryAttemptsExceeded
 	}

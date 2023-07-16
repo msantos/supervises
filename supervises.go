@@ -30,7 +30,7 @@ type Opt struct {
 	g            *errgroup.Group
 	cancelSignal syscall.Signal
 	signals      []os.Signal
-	retry        func(*Cmd, error) error
+	retry        func(*Cmd, *ExitError) error
 	log          func(s ...string)
 }
 
@@ -60,7 +60,7 @@ func WithNotifySignals(sigs ...os.Signal) Option {
 }
 
 // WithRetry sets the retry behaviour.
-func WithRetry(retry func(*Cmd, error) error) Option {
+func WithRetry(retry func(*Cmd, *ExitError) error) Option {
 	return func(o *Opt) {
 		if retry != nil {
 			o.retry = retry
@@ -81,7 +81,7 @@ func New(ctx context.Context, opt ...Option) *Opt {
 			syscall.SIGUSR2,
 		},
 		log: func(s ...string) {},
-		retry: func(_ *Cmd, _ error) error {
+		retry: func(_ *Cmd, _ *ExitError) error {
 			time.Sleep(time.Second)
 			return nil
 		},
@@ -248,19 +248,21 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 					return err
 				default:
 				}
+				var ee *ExitError
 				if err != nil {
-					var ee *ExitError
-					e := err
-					if errors.As(err, &ee) {
-						e = ee.Err()
+					if !errors.As(err, &ee) {
+						ee = &ExitError{
+							err: err,
+							status: 126,
+						}
 					}
-					if errors.Is(e, exec.ErrNotFound) || errors.Is(e, context.Canceled) {
+					if errors.Is(ee.err, exec.ErrNotFound) || errors.Is(ee.err, context.Canceled) {
 						return err
 					}
 
 					o.log("argv", v.String(), "error", err.Error())
 				}
-				if rerr := o.retry(v, err); rerr != nil {
+				if rerr := o.retry(v, ee); rerr != nil {
 					return rerr
 				}
 			}
