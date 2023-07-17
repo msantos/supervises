@@ -80,6 +80,7 @@ func New(ctx context.Context, opt ...Option) *Opt {
 			syscall.SIGUSR1,
 			syscall.SIGUSR2,
 		},
+		cancelSignal: syscall.SIGKILL,
 		log: func(s ...string) {},
 		retry: func(_ *Cmd, _ *ExitError) error {
 			time.Sleep(time.Second)

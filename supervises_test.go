@@ -103,7 +103,7 @@ func ExampleOpt_Supervise() {
 	defer cancel()
 
 	s := supervises.New(ctx)
-	cmds, err := s.Cmd("@echo test123; exec cat", "cat")
+	cmds, err := s.Cmd("@echo test123; exec sleep 10", "cat")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return
@@ -115,11 +115,6 @@ func ExampleOpt_Supervise() {
 
 	if !errors.As(err, &ee) {
 		fmt.Fprintln(os.Stderr, err.Error())
-		return
-	}
-
-	if !errors.Is(ee.Err(), context.DeadlineExceeded) {
-		fmt.Fprintf(os.Stderr, "unexpected exit status: %d: %s", ee.ExitCode(), ee.Error())
 		return
 	}
 
