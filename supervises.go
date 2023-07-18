@@ -81,6 +81,7 @@ func New(ctx context.Context, opt ...Option) *Opt {
 			syscall.SIGUSR2,
 		},
 		cancelSignal: syscall.SIGKILL,
+
 		log: func(s ...string) {},
 		retry: func(_ *Cmd, _ *ExitError) error {
 			time.Sleep(time.Second)
@@ -249,21 +250,14 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 					return err
 				default:
 				}
-				var ee *ExitError
 				if err != nil {
-					if !errors.As(err, &ee) {
-						ee = &ExitError{
-							err: err,
-							status: 126,
-						}
-					}
-					if errors.Is(ee.err, exec.ErrNotFound) || errors.Is(ee.err, context.Canceled) {
+					if errors.Is(err.err, context.Canceled) {
 						return err
 					}
 
 					o.log("argv", v.String(), "error", err.Error())
 				}
-				if rerr := o.retry(v, ee); rerr != nil {
+				if rerr := o.retry(v, err); rerr != nil {
 					return rerr
 				}
 			}
@@ -299,7 +293,7 @@ func (e *ExitError) String() string {
 	return e.argv
 }
 
-func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) error {
+func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args[1:]...)
 	cmd.Stdin = argv.Stdin
 	cmd.Stdout = argv.Stdout
@@ -330,7 +324,7 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) error {
 	return o.waitpid(waitch, b, cmd)
 }
 
-func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cmd) error {
+func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cmd) *ExitError {
 	var ee *exec.ExitError
 
 	ch := make(chan interface{})
