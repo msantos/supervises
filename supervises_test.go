@@ -43,13 +43,13 @@ func TestOpt_Supervise(t *testing.T) {
 			return
 		}
 
-		if !errors.Is(ee.Err(), context.DeadlineExceeded) {
+		if !errors.Is(ee.Err, context.DeadlineExceeded) {
 			t.Errorf("supervisor error: %s", ee.Error())
 			return
 		}
 
-		if ee.ExitCode() != 126 {
-			t.Errorf("unexpected exit status: %d: %s", ee.ExitCode(), ee.Error())
+		if ee.ExitCode != 126 {
+			t.Errorf("unexpected exit status: %d: %s", ee.ExitCode, ee.Error())
 			return
 		}
 
@@ -65,9 +65,12 @@ type retryState struct {
 	count int
 }
 
-func (r *retryState) retry(c *supervises.Cmd, ee *supervises.ExitError) error {
+func (r *retryState) retry(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
 	if r.count > 0 {
-		return ErrRetryAttemptsExceeded
+		return &supervises.ExitError{
+			Err:      ErrRetryAttemptsExceeded,
+			ExitCode: 111,
+		}
 	}
 
 	r.count++
@@ -87,7 +90,12 @@ func TestOpt_Supervise_retry(t *testing.T) {
 	}
 
 	if err := s.Supervise(cmds...); err != nil {
-		if !errors.Is(err, ErrRetryAttemptsExceeded) {
+		var ee *supervises.ExitError
+		if !errors.As(err, &ee) {
+			t.Errorf("%v", err)
+			return
+		}
+		if !errors.Is(ee.Err, ErrRetryAttemptsExceeded) {
 			t.Errorf("%v", err)
 			return
 		}

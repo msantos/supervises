@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"codeberg.org/msantos/supervises"
 	"golang.org/x/exp/slog"
 )
 
 const (
-	version = "0.3.0"
+	version = "0.4.0"
 )
 
 var (
@@ -62,6 +64,11 @@ func main() {
 	sig := flag.Int("signal", int(syscall.SIGKILL), "signal sent to subprocesses on exit")
 	verbose := flag.Bool("verbose", false, "Enable debug messages")
 
+	retryWait := flag.Duration("retry-wait", 1*time.Second, "retry backoff interval")
+	retryCount := flag.Int("retry-count", 0, "retry limit before exiting (0: no limit)")
+	retryPeriod := flag.Duration("retry-period", 0, "time interval for retries (0: no limit)")
+	errExit := flag.Bool("errexit", false, "retries apply to tasks exiting with a non-0 status")
+
 	flag.Usage = func() { usage() }
 	flag.Parse()
 
@@ -77,6 +84,46 @@ func main() {
 		}
 	}
 
+	var count atomic.Int32
+
+	count.Store(int32(*retryCount))
+
+	var t *time.Ticker
+
+	if *retryPeriod > 0 {
+		t = time.NewTicker(*retryPeriod)
+	}
+
+	retry := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+		if t != nil {
+			select {
+			case <-t.C:
+				count.Store(int32(*retryCount))
+			default:
+			}
+		}
+
+		if *errExit {
+			if ee != nil {
+				count.Add(-1)
+			}
+		} else {
+			count.Add(-1)
+		}
+
+		if count.Load() <= 0 {
+			if ee != nil {
+				return ee
+			}
+			return &supervises.ExitError{
+				Argv: c.String(),
+			}
+		}
+
+		time.Sleep(*retryWait)
+		return nil
+	}
+
 	if *help || flag.NArg() < 1 {
 		usage()
 		os.Exit(2)
@@ -86,6 +133,7 @@ func main() {
 		context.Background(),
 		supervises.WithCancelSignal(syscall.Signal(*sig)),
 		supervises.WithLog(log),
+		supervises.WithRetry(retry),
 	)
 
 	var ee *supervises.ExitError
@@ -97,8 +145,8 @@ func main() {
 			os.Exit(126)
 		}
 
-		l.Error("command failed", "argv", ee.String(), "status", ee.ExitCode(), "error", err)
-		os.Exit(ee.ExitCode())
+		l.Error("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", err)
+		os.Exit(ee.ExitCode)
 	}
 
 	if err := s.Supervise(cmd...); err != nil {
@@ -107,7 +155,7 @@ func main() {
 			os.Exit(128)
 		}
 
-		l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode(), "error", err)
-		os.Exit(ee.ExitCode())
+		l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", err)
+		os.Exit(ee.ExitCode)
 	}
 }

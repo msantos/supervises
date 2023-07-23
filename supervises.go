@@ -30,7 +30,7 @@ type Opt struct {
 	g            *errgroup.Group
 	cancelSignal syscall.Signal
 	signals      []os.Signal
-	retry        func(*Cmd, *ExitError) error
+	retry        func(*Cmd, *ExitError) *ExitError
 	log          func(s ...string)
 }
 
@@ -60,7 +60,7 @@ func WithNotifySignals(sigs ...os.Signal) Option {
 }
 
 // WithRetry sets the retry behaviour.
-func WithRetry(retry func(*Cmd, *ExitError) error) Option {
+func WithRetry(retry func(*Cmd, *ExitError) *ExitError) Option {
 	return func(o *Opt) {
 		if retry != nil {
 			o.retry = retry
@@ -83,7 +83,7 @@ func New(ctx context.Context, opt ...Option) *Opt {
 		cancelSignal: syscall.SIGKILL,
 
 		log: func(s ...string) {},
-		retry: func(_ *Cmd, _ *ExitError) error {
+		retry: func(_ *Cmd, _ *ExitError) *ExitError {
 			time.Sleep(time.Second)
 			return nil
 		},
@@ -181,26 +181,26 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	argv, err := shellwords.Parse(arg)
 	if err != nil {
 		return nil, &ExitError{
-			argv:   arg,
-			err:    err,
-			status: 2,
+			Argv:     arg,
+			Err:      err,
+			ExitCode: 2,
 		}
 	}
 
 	if len(argv) == 0 {
 		return nil, &ExitError{
-			argv:   arg,
-			err:    ErrInvalidCommand,
-			status: 2,
+			Argv:     arg,
+			Err:      ErrInvalidCommand,
+			ExitCode: 2,
 		}
 	}
 
 	arg0, err := exec.LookPath(argv[0])
 	if err != nil {
 		return nil, &ExitError{
-			argv:   arg,
-			err:    err,
-			status: 127,
+			Argv:     arg,
+			Err:      err,
+			ExitCode: 127,
 		}
 	}
 
@@ -251,7 +251,7 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 				default:
 				}
 				if err != nil {
-					if errors.Is(err.err, context.Canceled) {
+					if errors.Is(err.Err, context.Canceled) {
 						return err
 					}
 
@@ -268,29 +268,21 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 }
 
 type ExitError struct {
-	argv   string
-	err    error
-	cmd    *exec.Cmd
-	status int
-}
-
-func (e *ExitError) Err() error {
-	return e.err
+	Argv     string
+	Err      error
+	cmd      *exec.Cmd
+	ExitCode int
 }
 
 func (e *ExitError) Error() string {
-	return fmt.Sprintf("Exited with status %d: %s", e.status, e.err.Error())
-}
-
-func (e *ExitError) ExitCode() int {
-	return e.status
+	return fmt.Sprintf("Exited with status %d: %s", e.ExitCode, e.Err.Error())
 }
 
 func (e *ExitError) String() string {
 	if e.cmd != nil {
 		return e.cmd.String()
 	}
-	return e.argv
+	return e.Argv
 }
 
 func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
@@ -310,9 +302,9 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 			status = 126
 		}
 		return &ExitError{
-			cmd:    cmd,
-			err:    err,
-			status: status,
+			cmd:      cmd,
+			Err:      err,
+			ExitCode: status,
 		}
 	}
 
@@ -349,33 +341,33 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 
 			if !errors.As(err, &ee) {
 				return &ExitError{
-					cmd:    cmd,
-					status: 128,
-					err:    err,
+					cmd:      cmd,
+					ExitCode: 128,
+					Err:      err,
 				}
 			}
 
 			waitStatus, ok := ee.Sys().(syscall.WaitStatus)
 			if !ok {
 				return &ExitError{
-					cmd:    cmd,
-					status: 128,
-					err:    err,
+					cmd:      cmd,
+					ExitCode: 128,
+					Err:      err,
 				}
 			}
 
 			if waitStatus.Signaled() {
 				return &ExitError{
-					cmd:    cmd,
-					status: 128 + int(waitStatus.Signal()),
-					err:    err,
+					cmd:      cmd,
+					ExitCode: 128 + int(waitStatus.Signal()),
+					Err:      err,
 				}
 			}
 
 			return &ExitError{
-				cmd:    cmd,
-				status: waitStatus.ExitStatus(),
-				err:    ErrExitFailure,
+				cmd:      cmd,
+				ExitCode: waitStatus.ExitStatus(),
+				Err:      ErrExitFailure,
 			}
 		}
 	}
