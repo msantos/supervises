@@ -95,28 +95,30 @@ func main() {
 	}
 
 	retry := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
-		if t != nil {
-			select {
-			case <-t.C:
-				count.Store(int32(*retryCount))
-			default:
+		if *retryCount > 0 {
+			if t != nil {
+				select {
+				case <-t.C:
+					count.Store(int32(*retryCount))
+				default:
+				}
 			}
-		}
 
-		if *errExit {
-			if ee != nil {
+			if *errExit {
+				if ee != nil {
+					count.Add(-1)
+				}
+			} else {
 				count.Add(-1)
 			}
-		} else {
-			count.Add(-1)
-		}
 
-		if count.Load() <= 0 {
-			if ee != nil {
-				return ee
-			}
-			return &supervises.ExitError{
-				Argv: c.String(),
+			if count.Load() <= 0 {
+				if ee != nil {
+					return ee
+				}
+				return &supervises.ExitError{
+					Argv: c.String(),
+				}
 			}
 		}
 
