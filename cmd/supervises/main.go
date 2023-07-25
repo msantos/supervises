@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	version = "0.4.0"
+	version = "0.5.0"
 )
 
 var (
@@ -72,16 +72,8 @@ func main() {
 	flag.Usage = func() { usage() }
 	flag.Parse()
 
-	log := func(s ...string) {}
 	if *verbose {
 		programLevel.Set(slog.LevelDebug)
-		log = func(s ...string) {
-			a := make([]any, 0, len(s))
-			for _, v := range s {
-				a = append(a, v)
-			}
-			l.Debug("supervises", a...)
-		}
 	}
 
 	var count atomic.Int32
@@ -95,6 +87,10 @@ func main() {
 	}
 
 	retry := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+		if ee != nil {
+			l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
+		}
+
 		if *retryCount > 0 {
 			if t != nil {
 				select {
@@ -134,7 +130,6 @@ func main() {
 	s := supervises.New(
 		context.Background(),
 		supervises.WithCancelSignal(syscall.Signal(*sig)),
-		supervises.WithLog(log),
 		supervises.WithRetry(retry),
 	)
 
@@ -147,7 +142,7 @@ func main() {
 			os.Exit(126)
 		}
 
-		l.Error("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", err)
+		l.Error("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		os.Exit(ee.ExitCode)
 	}
 
@@ -157,7 +152,7 @@ func main() {
 			os.Exit(128)
 		}
 
-		l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", err)
+		l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		os.Exit(ee.ExitCode)
 	}
 }

@@ -31,19 +31,9 @@ type Opt struct {
 	cancelSignal syscall.Signal
 	signals      []os.Signal
 	retry        func(*Cmd, *ExitError) *ExitError
-	log          func(s ...string)
 }
 
 type Option func(*Opt)
-
-// WithLog sets the debug logger.
-func WithLog(log func(...string)) Option {
-	return func(o *Opt) {
-		if log != nil {
-			o.log = log
-		}
-	}
-}
 
 // WithCancelSignal sets the signal sent to subprocesses on exit.
 func WithCancelSignal(sig syscall.Signal) Option {
@@ -82,7 +72,6 @@ func New(ctx context.Context, opt ...Option) *Opt {
 		},
 		cancelSignal: syscall.SIGKILL,
 
-		log: func(s ...string) {},
 		retry: func(_ *Cmd, _ *ExitError) *ExitError {
 			time.Sleep(time.Second)
 			return nil
@@ -254,8 +243,6 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 					if errors.Is(err.Err, context.Canceled) {
 						return err
 					}
-
-					o.log("argv", v.String(), "error", err.Error())
 				}
 				if rerr := o.retry(v, err); rerr != nil {
 					return rerr
