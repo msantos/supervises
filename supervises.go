@@ -257,7 +257,7 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 type ExitError struct {
 	Argv     string
 	Err      error
-	cmd      *exec.Cmd
+	Cmd      *exec.Cmd
 	ExitCode int
 }
 
@@ -266,9 +266,6 @@ func (e *ExitError) Error() string {
 }
 
 func (e *ExitError) String() string {
-	if e.cmd != nil {
-		return e.cmd.String()
-	}
 	return e.Argv
 }
 
@@ -289,7 +286,8 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 			status = 126
 		}
 		return &ExitError{
-			cmd:      cmd,
+			Argv:     cmd.String(),
+			Cmd:      cmd,
 			Err:      err,
 			ExitCode: status,
 		}
@@ -328,7 +326,8 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 
 			if !errors.As(err, &ee) {
 				return &ExitError{
-					cmd:      cmd,
+					Argv:     cmd.String(),
+					Cmd:      cmd,
 					ExitCode: 128,
 					Err:      err,
 				}
@@ -337,7 +336,8 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 			waitStatus, ok := ee.Sys().(syscall.WaitStatus)
 			if !ok {
 				return &ExitError{
-					cmd:      cmd,
+					Argv:     cmd.String(),
+					Cmd:      cmd,
 					ExitCode: 128,
 					Err:      err,
 				}
@@ -345,14 +345,16 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 
 			if waitStatus.Signaled() {
 				return &ExitError{
-					cmd:      cmd,
+					Argv:     cmd.String(),
+					Cmd:      cmd,
 					ExitCode: 128 + int(waitStatus.Signal()),
 					Err:      err,
 				}
 			}
 
 			return &ExitError{
-				cmd:      cmd,
+				Argv:     cmd.String(),
+				Cmd:      cmd,
 				ExitCode: waitStatus.ExitStatus(),
 				Err:      ErrExitFailure,
 			}
