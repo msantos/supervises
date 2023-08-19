@@ -28,12 +28,20 @@ type Opt struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	g            *errgroup.Group
+	cancelFunc   func(*exec.Cmd, syscall.Signal) error
 	cancelSignal syscall.Signal
 	signals      []os.Signal
 	retry        func(*Cmd, *ExitError) *ExitError
 }
 
 type Option func(*Opt)
+
+// WithCancelFunc sets the function to reap cancelled subprocesses.
+func WithCancelFunc(f func(*exec.Cmd, syscall.Signal) error) Option {
+	return func(o *Opt) {
+		o.cancelFunc = f
+	}
+}
 
 // WithCancelSignal sets the signal sent to subprocesses on exit.
 func WithCancelSignal(sig syscall.Signal) Option {
@@ -69,6 +77,9 @@ func New(ctx context.Context, opt ...Option) *Opt {
 			syscall.SIGTERM,
 			syscall.SIGUSR1,
 			syscall.SIGUSR2,
+		},
+		cancelFunc: func(cmd *exec.Cmd, sig syscall.Signal) error {
+			return cmd.Process.Signal(sig)
 		},
 		cancelSignal: syscall.SIGKILL,
 
@@ -276,7 +287,7 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 	cmd.Stderr = argv.Stderr
 	cmd.Env = argv.Env
 	cmd.Cancel = func() error {
-		return cmd.Process.Signal(o.cancelSignal)
+		return o.cancelFunc(cmd, o.cancelSignal)
 	}
 	cmd.SysProcAttr = argv.SysProcAttr
 
