@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"sync/atomic"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"codeberg.org/msantos/supervises"
-	"golang.org/x/exp/slog"
 )
 
 const (
