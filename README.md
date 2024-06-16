@@ -16,7 +16,7 @@ go install codeberg.org/msantos/supervises/cmd/supervises@latest
 
 ```
 cd cmd/supervises
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"
+CGO_ENABLED=0 go build -trimpath -ldflags "-w"
 ```
 
 # EXAMPLES
