@@ -1,3 +1,5 @@
+[![Go Reference](https://pkg.go.dev/badge/codeberg.org/msantos/supervises.svg)](https://pkg.go.dev/codeberg.org/msantos/supervises)
+
 # SYNOPSIS
 
 supervises [*options*] "*command* *...*" "..."
