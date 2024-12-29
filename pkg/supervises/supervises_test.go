@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/msantos/supervises"
+	"codeberg.org/msantos/supervises/pkg/supervises"
 )
 
 const (
