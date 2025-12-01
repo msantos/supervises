@@ -1,4 +1,4 @@
-module codeberg.org/msantos/supervises
+module go.iscode.ca/supervises
 
 go 1.21
 

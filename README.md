@@ -1,4 +1,4 @@
-[![Go Reference](https://pkg.go.dev/badge/codeberg.org/msantos/supervises.svg)](https://pkg.go.dev/codeberg.org/msantos/supervises)
+[![Go Reference](https://pkg.go.dev/badge/go.iscode.ca/supervises.svg)](https://pkg.go.dev/go.iscode.ca/supervises)
 
 # SYNOPSIS
 
@@ -11,7 +11,7 @@ Minimal command line supervisor.
 # BUILDING
 
 ```
-go install codeberg.org/msantos/supervises/cmd/supervises@latest
+go install go.iscode.ca/supervises/cmd/supervises@latest
 ```
 
 ## Source

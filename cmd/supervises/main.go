@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"codeberg.org/msantos/supervises/pkg/supervises"
+	"go.iscode.ca/supervises/pkg/supervises"
 )
 
 const (
