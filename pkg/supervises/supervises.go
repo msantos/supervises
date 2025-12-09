@@ -234,7 +234,9 @@ func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
 
 func (o *Opt) Supervise(args ...*Cmd) error {
 	b := broadcast.NewBroadcaster(len(args))
-	defer b.Close()
+	defer func() {
+		_ = b.Close()
+	}()
 
 	o.g.Go(func() error {
 		return o.sighandler(o.ctx, b)
