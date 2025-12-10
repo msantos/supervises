@@ -31,28 +31,28 @@ supervises 'nc -vnl 7070' 'nc -vnl 7071' 'nc -vnl 7072'
 * @: run in shell
 
   ```
-     supervises @'nc -l 8080 >nc.log'
+  supervises @'nc -l 8080 >nc.log'
   ```
 
 * =: discard stdout/stderr
 
   ```
-     # equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
-     supervises ='nc -l 8080'
+  # equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
+  supervises ='nc -l 8080'
   ```
 
 * =1: discard stdout
 
   ```
-     # equivalent to: supervises @'nc -l 8080 >/dev/null'
-     supervises =1'nc -l 8080'
+  # equivalent to: supervises @'nc -l 8080 >/dev/null'
+  supervises =1'nc -l 8080'
   ```
 
 * =2: discard stderr
 
   ```
-     # equivalent to: supervises @'nc -l 8080 2>/dev/null'
-     supervises =2'nc -l 8080'
+  # equivalent to: supervises @'nc -l 8080 2>/dev/null'
+  supervises =2'nc -l 8080'
   ```
 
 # OPTIONS
