@@ -243,7 +243,6 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 	})
 
 	for _, v := range args {
-		v := v
 		o.g.Go(func() error {
 			for {
 				err := o.run(b, v)
@@ -317,7 +316,7 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cmd) *ExitError {
 	var ee *exec.ExitError
 
-	ch := make(chan interface{})
+	ch := make(chan any)
 	b.Register(ch)
 	defer b.Unregister(ch)
 
