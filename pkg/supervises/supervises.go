@@ -138,6 +138,32 @@ func (c *Cmd) String() string {
 	return b.String()
 }
 
+// Cmd accepts a list of commands to be supervised and returns an error
+// if the executable is not found or the commands is not a valid shell
+// expression.
+//
+// # Sigils
+//
+// Commands may be prefixed by sigils which modify the command behaviour:
+//
+// - @: run in shell
+//
+//	supervises @'nc -l 8080 >nc.log'
+//
+// - =: discard stdout/stderr
+//
+//	# equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
+//	supervises ='nc -l 8080'
+//
+// * =1: discard stdout
+//
+//	# equivalent to: supervises @'nc -l 8080 >/dev/null'
+//	supervises =1'nc -l 8080'
+//
+// * =2: discard stderr
+//
+//	# equivalent to: supervises @'nc -l 8080 2>/dev/null'
+//	supervises =2'nc -l 8080'
 func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
 	cmds := make([]*Cmd, 0, len(args))
 	for _, v := range args {
