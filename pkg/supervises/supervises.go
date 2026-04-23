@@ -349,8 +349,8 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 	for {
 		select {
 		case v := <-ch:
-			if v, ok := v.(os.Signal); ok {
-				_ = cmd.Process.Signal(v)
+			if sig, ok := v.(os.Signal); ok {
+				_ = cmd.Process.Signal(sig)
 			}
 		case err := <-waitch:
 			if err == nil {
