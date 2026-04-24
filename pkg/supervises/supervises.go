@@ -258,6 +258,7 @@ func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
 	}
 }
 
+// Supervise runs, monitors and restarts a list of commands.
 func (o *Opt) Supervise(args ...*Cmd) error {
 	b := broadcast.NewBroadcaster(len(args))
 	defer func() {
