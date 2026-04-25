@@ -67,6 +67,28 @@ func WithRetry(retry func(*Cmd, *ExitError) *ExitError) Option {
 }
 
 // New returns configuration for supervisors.
+//
+// # Signals
+//
+// By default, the following signals are intercepted and forwarded to
+// supervised processes:
+//
+// - SIGHUP
+// - SIGINT
+// - SIGQUIT
+// - SIGALRM
+// - SIGTERM
+// - SIGUSR1
+// - SIGUSR2
+//
+// If SIGINT is caught, the first signal will be broadcasted to supervised
+// processes. A second SIGINT will cause the supervisor to exit, sending
+// the cancel signal (default: SIGKILL).
+//
+// # Cancel Function and Signal
+//
+// The default cancel function signals supervised processes if the supervisor
+// exits, e.g., due to timeout. The cancel signal defaults to SIGKILL.
 func New(ctx context.Context, opt ...Option) *Opt {
 	o := &Opt{
 		signals: []os.Signal{
