@@ -295,16 +295,17 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 		o.g.Go(func() error {
 			for {
 				err := o.run(b, v)
+
 				select {
 				case <-o.ctx.Done():
 					return err
 				default:
 				}
-				if err != nil {
-					if errors.Is(err.Err, context.Canceled) {
-						return err
-					}
+
+				if err != nil && errors.Is(err.Err, context.Canceled) {
+					return err
 				}
+
 				if rerr := o.retry(v, err); rerr != nil {
 					return rerr
 				}
