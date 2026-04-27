@@ -229,7 +229,9 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	argv, err := shellwords.Parse(arg)
 	if err != nil {
 		return nil, &ExitError{
-			Argv:     arg,
+			Cmd: &exec.Cmd{
+				Path: arg,
+			},
 			Err:      err,
 			ExitCode: 2,
 		}
@@ -237,7 +239,9 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 
 	if len(argv) == 0 {
 		return nil, &ExitError{
-			Argv:     arg,
+			Cmd: &exec.Cmd{
+				Path: arg,
+			},
 			Err:      ErrInvalidCommand,
 			ExitCode: 2,
 		}
@@ -246,7 +250,10 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	arg0, err := exec.LookPath(argv[0])
 	if err != nil {
 		return nil, &ExitError{
-			Argv:     arg,
+			Cmd: &exec.Cmd{
+				Path: argv[0],
+				Args: argv,
+			},
 			Err:      err,
 			ExitCode: 127,
 		}
@@ -317,7 +324,6 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 }
 
 type ExitError struct {
-	Argv     string
 	Err      error
 	Cmd      *exec.Cmd
 	ExitCode int
@@ -328,7 +334,7 @@ func (e *ExitError) Error() string {
 }
 
 func (e *ExitError) String() string {
-	return e.Argv
+	return e.Cmd.String()
 }
 
 func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
@@ -348,7 +354,6 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 			status = 126
 		}
 		return &ExitError{
-			Argv:     cmd.String(),
 			Cmd:      cmd,
 			Err:      err,
 			ExitCode: status,
@@ -383,7 +388,6 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 
 			if !errors.As(err, &ee) {
 				return &ExitError{
-					Argv:     cmd.String(),
 					Cmd:      cmd,
 					ExitCode: 128,
 					Err:      err,
@@ -393,7 +397,6 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 			waitStatus, ok := ee.Sys().(syscall.WaitStatus)
 			if !ok {
 				return &ExitError{
-					Argv:     cmd.String(),
 					Cmd:      cmd,
 					ExitCode: 128,
 					Err:      err,
@@ -402,7 +405,6 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 
 			if waitStatus.Signaled() {
 				return &ExitError{
-					Argv:     cmd.String(),
 					Cmd:      cmd,
 					ExitCode: 128 + int(waitStatus.Signal()),
 					Err:      err,
@@ -410,7 +412,6 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 			}
 
 			return &ExitError{
-				Argv:     cmd.String(),
 				Cmd:      cmd,
 				ExitCode: waitStatus.ExitStatus(),
 				Err:      ErrExitFailure,

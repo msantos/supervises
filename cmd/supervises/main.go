@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path"
 	"sync/atomic"
 	"syscall"
@@ -113,7 +114,9 @@ func main() {
 					return ee
 				}
 				return &supervises.ExitError{
-					Argv: c.String(),
+					Cmd: &exec.Cmd{
+						Path: c.String(),
+					},
 				}
 			}
 		}
