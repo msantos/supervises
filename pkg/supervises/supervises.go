@@ -18,7 +18,6 @@ import (
 )
 
 var (
-	ErrExitFailure    = errors.New("failed")
 	ErrInvalidCommand = errors.New("invalid command")
 	ErrSignal         = errors.New("terminated by signal")
 )
@@ -414,7 +413,7 @@ func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cm
 			return &ExitError{
 				Cmd:      cmd,
 				ExitCode: waitStatus.ExitStatus(),
-				Err:      ErrExitFailure,
+				Err:      err,
 			}
 		}
 	}
