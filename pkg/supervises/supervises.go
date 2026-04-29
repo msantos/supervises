@@ -230,6 +230,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 		return nil, &ExitError{
 			Cmd: &exec.Cmd{
 				Path: arg,
+				Args: []string{arg},
 			},
 			Err:      err,
 			ExitCode: 2,
@@ -240,6 +241,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 		return nil, &ExitError{
 			Cmd: &exec.Cmd{
 				Path: arg,
+				Args: []string{arg},
 			},
 			Err:      ErrInvalidCommand,
 			ExitCode: 2,
