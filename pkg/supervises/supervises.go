@@ -279,7 +279,14 @@ func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
 		case v := <-sigch:
 			if v == syscall.SIGINT {
 				if count > 0 {
-					return ErrSignal
+					return &ExitError{
+						Cmd: &exec.Cmd{
+							Path: os.Args[0],
+							Args: []string{os.Args[0]},
+						},
+						ExitCode: 128 + int(syscall.SIGINT),
+						Err:      ErrSignal,
+					}
 				}
 				count++
 			}
