@@ -229,7 +229,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	if err != nil {
 		return nil, &ExitError{
 			Cmd: &exec.Cmd{
-				Path: arg,
+				Path: os.Args[0],
 				Args: []string{arg},
 			},
 			Err:      err,
@@ -240,7 +240,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	if len(argv) == 0 {
 		return nil, &ExitError{
 			Cmd: &exec.Cmd{
-				Path: arg,
+				Path: os.Args[0],
 				Args: []string{arg},
 			},
 			Err:      ErrInvalidCommand,
