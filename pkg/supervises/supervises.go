@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dustin/go-broadcast"
 	"github.com/mattn/go-shellwords"
+	"go.iscode.ca/supervises/pkg/broadcast"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -379,16 +379,14 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cmd) *ExitError {
 	var ee *exec.ExitError
 
-	ch := make(chan any)
+	ch := make(chan os.Signal)
 	b.Register(ch)
 	defer b.Unregister(ch)
 
 	for {
 		select {
-		case v := <-ch:
-			if sig, ok := v.(os.Signal); ok {
-				_ = cmd.Process.Signal(sig)
-			}
+		case sig := <-ch:
+			_ = cmd.Process.Signal(sig)
 		case err := <-waitch:
 			if err == nil {
 				return nil
