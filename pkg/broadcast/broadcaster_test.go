@@ -13,7 +13,7 @@ func TestBroadcast(t *testing.T) {
 	b := NewBroadcaster(100)
 	defer b.Close()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		wg.Add(1)
 
 		cch := make(chan os.Signal)
