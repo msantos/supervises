@@ -11,7 +11,9 @@ func TestBroadcast(t *testing.T) {
 	wg := sync.WaitGroup{}
 
 	b := NewBroadcaster(100)
-	defer b.Close()
+	defer func() {
+		_ = b.Close()
+	}()
 
 	for range 5 {
 		wg.Add(1)
@@ -36,7 +38,7 @@ func TestBroadcast(t *testing.T) {
 func TestBroadcastCleanup(t *testing.T) {
 	b := NewBroadcaster(100)
 	b.Register(make(chan os.Signal))
-	b.Close()
+	_ = b.Close()
 }
 
 func echoer(chin, chout chan os.Signal) {
@@ -62,7 +64,9 @@ func BenchmarkBrodcast(b *testing.B) {
 	chout := make(chan os.Signal)
 
 	bc := NewBroadcaster(0)
-	defer bc.Close()
+	defer func() {
+		_ = bc.Close()
+	}()
 	bc.Register(chout)
 
 	for i := 0; i < b.N; i++ {
@@ -90,7 +94,9 @@ func BenchmarkParallelBrodcast(b *testing.B) {
 	chout := make(chan os.Signal)
 
 	bc := NewBroadcaster(0)
-	defer bc.Close()
+	defer func() {
+		_ = bc.Close()
+	}()
 	bc.Register(chout)
 
 	b.RunParallel(func(pb *testing.PB) {
