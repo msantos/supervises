@@ -6,36 +6,34 @@ which subscribers Register to pick up those messages.
 */
 package broadcast
 
-import "os"
+type broadcaster[T any] struct {
+	input chan T
+	reg   chan chan<- T
+	unreg chan chan<- T
 
-type broadcaster struct {
-	input chan os.Signal
-	reg   chan chan<- os.Signal
-	unreg chan chan<- os.Signal
-
-	outputs map[chan<- os.Signal]bool
+	outputs map[chan<- T]bool
 }
 
 // The Broadcaster interface describes the main entry points to
 // broadcasters.
-type Broadcaster interface {
+type Broadcaster[T any] interface {
 	// Register a new channel to receive broadcasts
-	Register(chan<- os.Signal)
+	Register(chan<- T)
 	// Unregister a channel so that it no longer receives broadcasts.
-	Unregister(chan<- os.Signal)
+	Unregister(chan<- T)
 	// Shut this broadcaster down.
 	Close() error
 	// Submit a new object to all subscribers
-	Submit(os.Signal)
+	Submit(T)
 }
 
-func (b *broadcaster) broadcast(m os.Signal) {
+func (b *broadcaster[T]) broadcast(m T) {
 	for ch := range b.outputs {
 		ch <- m
 	}
 }
 
-func (b *broadcaster) run() {
+func (b *broadcaster[T]) run() {
 	for {
 		select {
 		case m := <-b.input:
@@ -54,12 +52,12 @@ func (b *broadcaster) run() {
 
 // NewBroadcaster creates a new broadcaster with the given input
 // channel buffer length.
-func NewBroadcaster(buflen int) Broadcaster {
-	b := &broadcaster{
-		input:   make(chan os.Signal, buflen),
-		reg:     make(chan chan<- os.Signal),
-		unreg:   make(chan chan<- os.Signal),
-		outputs: make(map[chan<- os.Signal]bool),
+func NewBroadcaster[T any](buflen int) Broadcaster[T] {
+	b := &broadcaster[T]{
+		input:   make(chan T, buflen),
+		reg:     make(chan chan<- T),
+		unreg:   make(chan chan<- T),
+		outputs: make(map[chan<- T]bool),
 	}
 
 	go b.run()
@@ -67,22 +65,22 @@ func NewBroadcaster(buflen int) Broadcaster {
 	return b
 }
 
-func (b *broadcaster) Register(newch chan<- os.Signal) {
+func (b *broadcaster[T]) Register(newch chan<- T) {
 	b.reg <- newch
 }
 
-func (b *broadcaster) Unregister(newch chan<- os.Signal) {
+func (b *broadcaster[T]) Unregister(newch chan<- T) {
 	b.unreg <- newch
 }
 
-func (b *broadcaster) Close() error {
+func (b *broadcaster[T]) Close() error {
 	close(b.reg)
 	close(b.unreg)
 	return nil
 }
 
 // Submit an item to be broadcast to all listeners.
-func (b *broadcaster) Submit(m os.Signal) {
+func (b *broadcaster[T]) Submit(m T) {
 	if b != nil {
 		b.input <- m
 	}

@@ -10,7 +10,7 @@ import (
 func TestBroadcast(t *testing.T) {
 	wg := sync.WaitGroup{}
 
-	b := NewBroadcaster(100)
+	b := NewBroadcaster[os.Signal](100)
 	defer func() {
 		_ = b.Close()
 	}()
@@ -36,7 +36,7 @@ func TestBroadcast(t *testing.T) {
 }
 
 func TestBroadcastCleanup(t *testing.T) {
-	b := NewBroadcaster(100)
+	b := NewBroadcaster[os.Signal](100)
 	b.Register(make(chan os.Signal))
 	_ = b.Close()
 }
@@ -63,7 +63,7 @@ func BenchmarkDirectSend(b *testing.B) {
 func BenchmarkBrodcast(b *testing.B) {
 	chout := make(chan os.Signal)
 
-	bc := NewBroadcaster(0)
+	bc := NewBroadcaster[os.Signal](0)
 	defer func() {
 		_ = bc.Close()
 	}()
@@ -93,7 +93,7 @@ func BenchmarkParallelDirectSend(b *testing.B) {
 func BenchmarkParallelBrodcast(b *testing.B) {
 	chout := make(chan os.Signal)
 
-	bc := NewBroadcaster(0)
+	bc := NewBroadcaster[os.Signal](0)
 	defer func() {
 		_ = bc.Close()
 	}()

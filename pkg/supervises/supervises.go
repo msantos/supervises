@@ -266,7 +266,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	return c, nil
 }
 
-func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
+func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster[os.Signal]) error {
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, o.signals...)
 	defer signal.Stop(sigch)
@@ -297,7 +297,7 @@ func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster) error {
 
 // Supervise runs, monitors and restarts a list of commands.
 func (o *Opt) Supervise(args ...*Cmd) error {
-	b := broadcast.NewBroadcaster(len(args))
+	b := broadcast.NewBroadcaster[os.Signal](len(args))
 	defer func() {
 		_ = b.Close()
 	}()
@@ -345,7 +345,7 @@ func (e *ExitError) String() string {
 	return e.Cmd.String()
 }
 
-func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
+func (o *Opt) run(b broadcast.Broadcaster[os.Signal], argv *Cmd) *ExitError {
 	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args[1:]...)
 	cmd.Stdin = argv.Stdin
 	cmd.Stdout = argv.Stdout
@@ -376,7 +376,7 @@ func (o *Opt) run(b broadcast.Broadcaster, argv *Cmd) *ExitError {
 	return o.waitpid(waitch, b, cmd)
 }
 
-func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster, cmd *exec.Cmd) *ExitError {
+func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster[os.Signal], cmd *exec.Cmd) *ExitError {
 	var ee *exec.ExitError
 
 	ch := make(chan os.Signal)
