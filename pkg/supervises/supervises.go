@@ -295,6 +295,35 @@ func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster[os.Signal]
 	}
 }
 
+func (o *Opt) stdinhandler(ctx context.Context, bin broadcast.Broadcaster[[]byte]) error {
+	buf := make([]byte, 4096)
+	ch := make(chan []byte)
+
+	go func() {
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+				ch <- chunk
+			}
+			if err != nil {
+				return
+			}
+
+		}
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case chunk := <-ch:
+			bin.Submit(chunk)
+		}
+	}
+}
+
 // Supervise runs, monitors and restarts a list of commands.
 func (o *Opt) Supervise(args ...*Cmd) error {
 	b := broadcast.NewBroadcaster[os.Signal](len(args))
@@ -306,10 +335,19 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 		return o.sighandler(o.ctx, b)
 	})
 
+	bin := broadcast.NewBroadcaster[[]byte](len(args))
+	defer func() {
+		_ = bin.Close()
+	}()
+
+	o.g.Go(func() error {
+		return o.stdinhandler(o.ctx, bin)
+	})
+
 	for _, v := range args {
 		o.g.Go(func() error {
 			for {
-				err := o.run(b, v)
+				err := o.run(b, bin, v)
 
 				select {
 				case <-o.ctx.Done():
@@ -345,9 +383,8 @@ func (e *ExitError) String() string {
 	return e.Cmd.String()
 }
 
-func (o *Opt) run(b broadcast.Broadcaster[os.Signal], argv *Cmd) *ExitError {
+func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[[]byte], argv *Cmd) *ExitError {
 	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args[1:]...)
-	cmd.Stdin = argv.Stdin
 	cmd.Stdout = argv.Stdout
 	cmd.Stderr = argv.Stderr
 	cmd.Env = argv.Env
@@ -355,6 +392,11 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], argv *Cmd) *ExitError {
 		return o.cancelFunc(cmd, o.cancelSignal)
 	}
 	cmd.SysProcAttr = argv.SysProcAttr
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return &ExitError{Cmd: cmd, Err: err, ExitCode: 126}
+	}
 
 	if err := cmd.Start(); err != nil {
 		status := cmd.ProcessState.ExitCode()
@@ -367,6 +409,19 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], argv *Cmd) *ExitError {
 			ExitCode: status,
 		}
 	}
+
+	byteCh := make(chan []byte)
+	bin.Register(byteCh)
+	defer bin.Unregister(byteCh)
+
+	go func() {
+		for chunk := range byteCh {
+			_, err := stdinPipe.Write(chunk)
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	waitch := make(chan error, 1)
 	go func() {
