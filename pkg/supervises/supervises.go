@@ -266,7 +266,7 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	return c, nil
 }
 
-func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster[os.Signal]) error {
+func (o *Opt) sighandler(ctx context.Context, bsig broadcast.Broadcaster[os.Signal]) error {
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, o.signals...)
 	defer signal.Stop(sigch)
@@ -290,12 +290,12 @@ func (o *Opt) sighandler(ctx context.Context, b broadcast.Broadcaster[os.Signal]
 				}
 				count++
 			}
-			b.Submit(v)
+			bsig.Submit(v)
 		}
 	}
 }
 
-func (o *Opt) stdinhandler(ctx context.Context, bin broadcast.Broadcaster[[]byte]) error {
+func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]byte]) error {
 	buf := make([]byte, 4096)
 	ch := make(chan []byte)
 
@@ -319,35 +319,35 @@ func (o *Opt) stdinhandler(ctx context.Context, bin broadcast.Broadcaster[[]byte
 		case <-ctx.Done():
 			return nil
 		case chunk := <-ch:
-			bin.Submit(chunk)
+			bstdin.Submit(chunk)
 		}
 	}
 }
 
 // Supervise runs, monitors and restarts a list of commands.
 func (o *Opt) Supervise(args ...*Cmd) error {
-	b := broadcast.NewBroadcaster[os.Signal](len(args))
+	bsig := broadcast.NewBroadcaster[os.Signal](len(args))
 	defer func() {
-		_ = b.Close()
+		_ = bsig.Close()
 	}()
 
 	o.g.Go(func() error {
-		return o.sighandler(o.ctx, b)
+		return o.sighandler(o.ctx, bsig)
 	})
 
-	bin := broadcast.NewBroadcaster[[]byte](len(args))
+	bstdin := broadcast.NewBroadcaster[[]byte](len(args))
 	defer func() {
-		_ = bin.Close()
+		_ = bstdin.Close()
 	}()
 
 	o.g.Go(func() error {
-		return o.stdinhandler(o.ctx, bin)
+		return o.stdinhandler(o.ctx, bstdin)
 	})
 
 	for _, v := range args {
 		o.g.Go(func() error {
 			for {
-				err := o.run(b, bin, v)
+				err := o.run(bsig, bstdin, v)
 
 				select {
 				case <-o.ctx.Done():
