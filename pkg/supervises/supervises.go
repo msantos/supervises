@@ -296,16 +296,25 @@ func (o *Opt) sighandler(ctx context.Context, bsig broadcast.Broadcaster[os.Sign
 }
 
 func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]byte]) error {
+	defer func() {
+		_ = os.Stdin.Close()
+	}()
+
 	buf := make([]byte, 4096)
-	ch := make(chan []byte)
+	ch := make(chan []byte, 1)
 
 	go func() {
+		defer close(ch)
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
-				ch <- chunk
+				select {
+				case ch <- chunk:
+				case <-ctx.Done():
+					return
+				}
 			}
 			if err != nil {
 				return
