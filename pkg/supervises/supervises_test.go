@@ -28,7 +28,11 @@ func TestOpt_Supervise(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	s := supervises.New(ctx)
+	s := supervises.New(ctx, supervises.WithRetry(
+		func(_ *supervises.Cmd, eerr *supervises.ExitError) *supervises.ExitError {
+			return eerr
+		},
+	))
 	cmds, err := s.Cmd("cat", "cat", "cat")
 	if err != nil {
 		t.Errorf("invalid command: %v", err)
@@ -43,12 +47,12 @@ func TestOpt_Supervise(t *testing.T) {
 			return
 		}
 
-		if !errors.Is(ee.Err, context.DeadlineExceeded) {
+		if ee.Error() != "Exited with status 137: signal: killed" {
 			t.Errorf("supervisor error: %s", ee.Error())
 			return
 		}
 
-		if ee.ExitCode != 126 {
+		if ee.ExitCode != 137 {
 			t.Errorf("unexpected exit status: %d: %s", ee.ExitCode, ee.Error())
 			return
 		}
@@ -83,7 +87,7 @@ func TestOpt_Supervise_retry(t *testing.T) {
 		context.Background(),
 		supervises.WithRetry(r.retry),
 	)
-	cmds, err := s.Cmd("cat", "cat", "cat")
+	cmds, err := s.Cmd("@echo >/dev/null", "cat", "cat")
 	if err != nil {
 		t.Errorf("invalid command: %v", err)
 		return

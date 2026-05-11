@@ -327,7 +327,10 @@ func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]b
 		select {
 		case <-ctx.Done():
 			return nil
-		case chunk := <-ch:
+		case chunk, ok := <-ch:
+			if !ok {
+				return nil
+			}
 			bstdin.Submit(chunk)
 		}
 	}
@@ -424,10 +427,18 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[
 	defer bin.Unregister(byteCh)
 
 	go func() {
-		for chunk := range byteCh {
-			_, err := stdinPipe.Write(chunk)
-			if err != nil {
+		for {
+			select {
+			case <-o.ctx.Done():
 				return
+			case chunk, ok := <-byteCh:
+				if !ok {
+					return
+				}
+				_, err := stdinPipe.Write(chunk)
+				if err != nil {
+					return
+				}
 			}
 		}
 	}()
