@@ -116,6 +116,7 @@ func main() {
 				return &supervises.ExitError{
 					Cmd: &exec.Cmd{
 						Path: c.String(),
+						Args: []string{c.String()},
 					},
 				}
 			}
