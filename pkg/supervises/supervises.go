@@ -31,6 +31,7 @@ type Opt struct {
 	cancelSignal syscall.Signal
 	signals      []os.Signal
 	retry        func(*Cmd, *ExitError) *ExitError
+	stdin        io.ReadCloser
 }
 
 type Option func(*Opt)
@@ -62,6 +63,13 @@ func WithRetry(retry func(*Cmd, *ExitError) *ExitError) Option {
 		if retry != nil {
 			o.retry = retry
 		}
+	}
+}
+
+// WithStdin sets the source for standard input.
+func WithStdin(r io.ReadCloser) Option {
+	return func(o *Opt) {
+		o.stdin = r
 	}
 }
 
@@ -108,6 +116,8 @@ func New(ctx context.Context, opt ...Option) *Opt {
 			time.Sleep(time.Second)
 			return nil
 		},
+
+		stdin: os.Stdin,
 	}
 
 	for _, fn := range opt {
@@ -142,7 +152,6 @@ type Cmd struct {
 	Args        []string
 	Env         []string
 	Dir         string
-	Stdin       io.Reader
 	Stdout      io.Writer
 	Stderr      io.Writer
 	ExtraFiles  []*os.File
@@ -200,7 +209,6 @@ func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
 func (o *Opt) cmd(arg string) (*Cmd, error) {
 	c := &Cmd{
 		Env:    os.Environ(),
-		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		SysProcAttr: &syscall.SysProcAttr{
@@ -297,7 +305,7 @@ func (o *Opt) sighandler(ctx context.Context, bsig broadcast.Broadcaster[os.Sign
 
 func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]byte]) error {
 	defer func() {
-		_ = os.Stdin.Close()
+		_ = o.stdin.Close()
 	}()
 
 	buf := make([]byte, 4096)
@@ -306,7 +314,7 @@ func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]b
 	go func() {
 		defer close(ch)
 		for {
-			n, err := os.Stdin.Read(buf)
+			n, err := o.stdin.Read(buf)
 			if n > 0 {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
