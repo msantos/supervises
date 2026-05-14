@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -360,14 +361,29 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 		_ = bstdin.Close()
 	}()
 
+	var startupWg sync.WaitGroup
+	startupWg.Add(len(args))
+
 	o.g.Go(func() error {
+		startupWg.Wait()
 		return o.stdinhandler(o.ctx, bstdin)
 	})
 
 	for _, v := range args {
 		o.g.Go(func() error {
+			isFirstRun := true
+
 			for {
-				err := o.run(bsig, bstdin, v)
+				var notifyReady func()
+				if isFirstRun {
+					var once sync.Once
+					notifyReady = func() { once.Do(func() { startupWg.Done() }) }
+				} else {
+					notifyReady = func() {} // No-op for subsequent restarts
+				}
+
+				err := o.run(bsig, bstdin, v, notifyReady)
+				isFirstRun = false
 
 				select {
 				case <-o.ctx.Done():
@@ -403,7 +419,7 @@ func (e *ExitError) String() string {
 	return e.Cmd.String()
 }
 
-func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[[]byte], argv *Cmd) *ExitError {
+func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[[]byte], argv *Cmd, notifyReady func()) *ExitError {
 	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args[1:]...)
 	cmd.Stdout = argv.Stdout
 	cmd.Stderr = argv.Stderr
@@ -415,10 +431,12 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
+		notifyReady()
 		return &ExitError{Cmd: cmd, Err: err, ExitCode: 126}
 	}
 
 	if err := cmd.Start(); err != nil {
+		notifyReady()
 		status := cmd.ProcessState.ExitCode()
 		if status < 0 {
 			status = 126
@@ -433,6 +451,8 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[
 	byteCh := make(chan []byte)
 	bin.Register(byteCh)
 	defer bin.Unregister(byteCh)
+
+	notifyReady()
 
 	go func() {
 		for {
