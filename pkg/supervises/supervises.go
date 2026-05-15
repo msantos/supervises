@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +34,7 @@ type Opt struct {
 	signals      []os.Signal
 	retry        func(*Cmd, *ExitError) *ExitError
 	stdin        io.ReadCloser
+	EOF          atomic.Bool
 }
 
 type Option func(*Opt)
@@ -307,6 +309,7 @@ func (o *Opt) sighandler(ctx context.Context, bsig broadcast.Broadcaster[os.Sign
 func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]byte]) error {
 	defer func() {
 		_ = o.stdin.Close()
+		o.EOF.Store(true)
 	}()
 
 	buf := make([]byte, 4096)
@@ -448,28 +451,41 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[
 		}
 	}
 
-	byteCh := make(chan []byte)
-	bin.Register(byteCh)
-	defer bin.Unregister(byteCh)
+	if o.EOF.Load() {
+		_ = stdinPipe.Close()
+		notifyReady()
+	} else {
+		byteCh := make(chan []byte)
+		bin.Register(byteCh)
+		defer bin.Unregister(byteCh)
 
-	notifyReady()
+		runDone := make(chan struct{})
+		defer close(runDone)
 
-	go func() {
-		for {
-			select {
-			case <-o.ctx.Done():
-				return
-			case chunk, ok := <-byteCh:
-				if !ok {
+		notifyReady()
+
+		go func() {
+			defer func() {
+				_ = stdinPipe.Close()
+			}()
+			for {
+				select {
+				case <-o.ctx.Done():
 					return
-				}
-				_, err := stdinPipe.Write(chunk)
-				if err != nil {
+				case <-runDone:
 					return
+				case chunk, ok := <-byteCh:
+					if !ok {
+						return
+					}
+					_, err := stdinPipe.Write(chunk)
+					if err != nil {
+						return
+					}
 				}
 			}
-		}
-	}()
+		}()
+	}
 
 	waitch := make(chan error, 1)
 	go func() {
