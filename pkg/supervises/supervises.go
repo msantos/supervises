@@ -25,10 +25,7 @@ var (
 )
 
 type Opt struct {
-	uctx         context.Context
 	ctx          context.Context
-	cancel       context.CancelFunc
-	g            *errgroup.Group
 	cancelFunc   func(*exec.Cmd, syscall.Signal) error
 	cancelSignal syscall.Signal
 	signals      []os.Signal
@@ -101,6 +98,7 @@ func WithStdin(r io.ReadCloser) Option {
 // exits, e.g., due to timeout. The cancel signal defaults to SIGKILL.
 func New(ctx context.Context, opt ...Option) *Opt {
 	o := &Opt{
+		ctx: ctx,
 		signals: []os.Signal{
 			syscall.SIGHUP,
 			syscall.SIGINT,
@@ -127,27 +125,7 @@ func New(ctx context.Context, opt ...Option) *Opt {
 		fn(o)
 	}
 
-	o.uctx = ctx
-	o.Reset()
-
 	return o
-}
-
-func (o *Opt) Reset() {
-	if o.cancel != nil {
-		o.cancel()
-	}
-
-	cCtx, cancel := context.WithCancel(o.uctx)
-	g, ctx := errgroup.WithContext(cCtx)
-
-	o.g = g
-	o.ctx = ctx
-	o.cancel = cancel
-}
-
-func (o *Opt) Context() context.Context {
-	return o.ctx
 }
 
 type Cmd struct {
@@ -350,13 +328,15 @@ func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]b
 
 // Supervise runs, monitors and restarts a list of commands.
 func (o *Opt) Supervise(args ...*Cmd) error {
+	g, ctx := errgroup.WithContext(o.ctx)
+
 	bsig := broadcast.NewBroadcaster[os.Signal](len(args))
 	defer func() {
 		_ = bsig.Close()
 	}()
 
-	o.g.Go(func() error {
-		return o.sighandler(o.ctx, bsig)
+	g.Go(func() error {
+		return o.sighandler(ctx, bsig)
 	})
 
 	bstdin := broadcast.NewBroadcaster[[]byte](len(args))
@@ -367,13 +347,13 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 	var startupWg sync.WaitGroup
 	startupWg.Add(len(args))
 
-	o.g.Go(func() error {
+	g.Go(func() error {
 		startupWg.Wait()
-		return o.stdinhandler(o.ctx, bstdin)
+		return o.stdinhandler(ctx, bstdin)
 	})
 
 	for _, v := range args {
-		o.g.Go(func() error {
+		g.Go(func() error {
 			isFirstRun := true
 
 			for {
@@ -385,11 +365,11 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 					notifyReady = func() {} // No-op for subsequent restarts
 				}
 
-				err := o.run(bsig, bstdin, v, notifyReady)
+				err := o.run(ctx, bsig, bstdin, v, notifyReady)
 				isFirstRun = false
 
 				select {
-				case <-o.ctx.Done():
+				case <-ctx.Done():
 					return err
 				default:
 				}
@@ -405,7 +385,7 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 		})
 	}
 
-	return o.g.Wait()
+	return g.Wait()
 }
 
 type ExitError struct {
@@ -422,8 +402,8 @@ func (e *ExitError) String() string {
 	return e.Cmd.String()
 }
 
-func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[[]byte], argv *Cmd, notifyReady func()) *ExitError {
-	cmd := exec.CommandContext(o.ctx, argv.Path, argv.Args[1:]...)
+func (o *Opt) run(ctx context.Context, b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[[]byte], argv *Cmd, notifyReady func()) *ExitError {
+	cmd := exec.CommandContext(ctx, argv.Path, argv.Args[1:]...)
 	cmd.Stdout = argv.Stdout
 	cmd.Stderr = argv.Stderr
 	cmd.Env = argv.Env
@@ -470,7 +450,7 @@ func (o *Opt) run(b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[
 			}()
 			for {
 				select {
-				case <-o.ctx.Done():
+				case <-ctx.Done():
 					return
 				case <-runDone:
 					return
