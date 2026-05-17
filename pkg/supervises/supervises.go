@@ -288,6 +288,7 @@ func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]b
 	defer func() {
 		_ = o.stdin.Close()
 		o.EOF.Store(true)
+		bstdin.Submit(nil)
 	}()
 
 	buf := make([]byte, 4096)
@@ -455,7 +456,7 @@ func (o *Opt) run(ctx context.Context, b broadcast.Broadcaster[os.Signal], bin b
 				case <-runDone:
 					return
 				case chunk, ok := <-byteCh:
-					if !ok {
+					if !ok || len(chunk) == 0 {
 						return
 					}
 					_, err := stdinPipe.Write(chunk)
