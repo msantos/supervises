@@ -396,6 +396,12 @@ type ExitError struct {
 }
 
 func (e *ExitError) Error() string {
+	if e == nil {
+		return "Exited successfully"
+	}
+	if e.Err == nil {
+		return fmt.Sprintf("Exited with status %d", e.ExitCode)
+	}
 	return fmt.Sprintf("Exited with status %d: %s", e.ExitCode, e.Err.Error())
 }
 
