@@ -21,45 +21,44 @@ import (
 
 var (
 	ErrInvalidCommand = errors.New("invalid command")
-	ErrSignal         = errors.New("terminated by signal")
 )
 
-type Opt struct {
-	ctx          context.Context
+type Config struct {
 	cancelFunc   func(*exec.Cmd, syscall.Signal) error
 	cancelSignal syscall.Signal
-	signals      []os.Signal
 	retry        func(*Cmd, *ExitError) *ExitError
 	stdin        io.ReadCloser
-	EOF          atomic.Bool
 }
 
-type Option func(*Opt)
+type Option func(*Config)
+
+type Supervisor struct {
+	ctx  context.Context
+	cfg  *Config
+	cmds []*Cmd
+
+	bsig   broadcast.Broadcaster[os.Signal]
+	bstdin broadcast.Broadcaster[[]byte]
+	EOF    atomic.Bool
+}
 
 // WithCancelFunc sets the function to reap cancelled subprocesses.
 func WithCancelFunc(f func(*exec.Cmd, syscall.Signal) error) Option {
-	return func(o *Opt) {
+	return func(o *Config) {
 		o.cancelFunc = f
 	}
 }
 
 // WithCancelSignal sets the signal sent to subprocesses on exit.
 func WithCancelSignal(sig syscall.Signal) Option {
-	return func(o *Opt) {
+	return func(o *Config) {
 		o.cancelSignal = sig
-	}
-}
-
-// WithNotifySignals sets trapped signals by the supervisor.
-func WithNotifySignals(sigs ...os.Signal) Option {
-	return func(o *Opt) {
-		o.signals = sigs
 	}
 }
 
 // WithRetry sets the retry behaviour.
 func WithRetry(retry func(*Cmd, *ExitError) *ExitError) Option {
-	return func(o *Opt) {
+	return func(o *Config) {
 		if retry != nil {
 			o.retry = retry
 		}
@@ -68,46 +67,19 @@ func WithRetry(retry func(*Cmd, *ExitError) *ExitError) Option {
 
 // WithStdin sets the source for standard input.
 func WithStdin(r io.ReadCloser) Option {
-	return func(o *Opt) {
+	return func(o *Config) {
 		o.stdin = r
 	}
 }
 
 // New returns configuration for supervisors.
 //
-// # Signals
-//
-// By default, the following signals are intercepted and forwarded to
-// supervised processes:
-//
-// - SIGHUP
-// - SIGINT
-// - SIGQUIT
-// - SIGALRM
-// - SIGTERM
-// - SIGUSR1
-// - SIGUSR2
-//
-// If SIGINT is caught, the first signal will be broadcasted to supervised
-// processes. A second SIGINT will cause the supervisor to exit, sending
-// the cancel signal (default: SIGKILL).
-//
 // # Cancel Function and Signal
 //
 // The default cancel function signals supervised processes if the supervisor
 // exits, e.g., due to timeout. The cancel signal defaults to SIGKILL.
-func New(ctx context.Context, opt ...Option) *Opt {
-	o := &Opt{
-		ctx: ctx,
-		signals: []os.Signal{
-			syscall.SIGHUP,
-			syscall.SIGINT,
-			syscall.SIGQUIT,
-			syscall.SIGALRM,
-			syscall.SIGTERM,
-			syscall.SIGUSR1,
-			syscall.SIGUSR2,
-		},
+func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
+	cfg := &Config{
 		cancelFunc: func(cmd *exec.Cmd, sig syscall.Signal) error {
 			return cmd.Process.Signal(sig)
 		},
@@ -121,11 +93,18 @@ func New(ctx context.Context, opt ...Option) *Opt {
 		stdin: os.Stdin,
 	}
 
-	for _, fn := range opt {
-		fn(o)
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
-	return o
+	return &Supervisor{
+		ctx:  ctx,
+		cfg:  cfg,
+		cmds: cmds,
+
+		bsig:   broadcast.NewBroadcaster[os.Signal](len(cmds)),
+		bstdin: broadcast.NewBroadcaster[[]byte](len(cmds)),
+	}
 }
 
 type Cmd struct {
@@ -149,7 +128,7 @@ func (c *Cmd) String() string {
 	return b.String()
 }
 
-// Cmd accepts a list of commands to be supervised and returns an error
+// Parse accepts a list of commands to be supervised and returns an error
 // if the executable is not found or the commands is not a valid shell
 // expression.
 //
@@ -175,10 +154,10 @@ func (c *Cmd) String() string {
 //
 //	# equivalent to: supervises @'nc -l 8080 2>/dev/null'
 //	supervises =2'nc -l 8080'
-func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
+func Parse(args ...string) ([]*Cmd, error) {
 	cmds := make([]*Cmd, 0, len(args))
 	for _, v := range args {
-		cmd, err := o.cmd(v)
+		cmd, err := cmd(v)
 		if err != nil {
 			return cmds, err
 		}
@@ -187,7 +166,7 @@ func (o *Opt) Cmd(args ...string) ([]*Cmd, error) {
 	return cmds, nil
 }
 
-func (o *Opt) cmd(arg string) (*Cmd, error) {
+func cmd(arg string) (*Cmd, error) {
 	c := &Cmd{
 		Env:    os.Environ(),
 		Stdout: os.Stdout,
@@ -255,40 +234,11 @@ func (o *Opt) cmd(arg string) (*Cmd, error) {
 	return c, nil
 }
 
-func (o *Opt) sighandler(ctx context.Context, bsig broadcast.Broadcaster[os.Signal]) error {
-	sigch := make(chan os.Signal, 1)
-	signal.Notify(sigch, o.signals...)
-	defer signal.Stop(sigch)
-
-	count := 0
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case v := <-sigch:
-			if v == syscall.SIGINT {
-				if count > 0 {
-					return &ExitError{
-						Cmd: &exec.Cmd{
-							Path: os.Args[0],
-							Args: []string{os.Args[0]},
-						},
-						ExitCode: 128 + int(syscall.SIGINT),
-						Err:      ErrSignal,
-					}
-				}
-				count++
-			}
-			bsig.Submit(v)
-		}
-	}
-}
-
-func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]byte]) error {
+func (sv *Supervisor) stdinhandler(ctx context.Context) error {
 	defer func() {
-		_ = o.stdin.Close()
-		o.EOF.Store(true)
-		bstdin.Submit(nil)
+		_ = sv.cfg.stdin.Close()
+		sv.EOF.Store(true)
+		sv.bstdin.Submit(nil)
 	}()
 
 	buf := make([]byte, 4096)
@@ -297,7 +247,7 @@ func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]b
 	go func() {
 		defer close(ch)
 		for {
-			n, err := o.stdin.Read(buf)
+			n, err := sv.cfg.stdin.Read(buf)
 			if n > 0 {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
@@ -322,38 +272,67 @@ func (o *Opt) stdinhandler(ctx context.Context, bstdin broadcast.Broadcaster[[]b
 			if !ok {
 				return nil
 			}
-			bstdin.Submit(chunk)
+			sv.bstdin.Submit(chunk)
 		}
 	}
 }
 
-// Supervise runs, monitors and restarts a list of commands.
-func (o *Opt) Supervise(args ...*Cmd) error {
-	g, ctx := errgroup.WithContext(o.ctx)
+// ForwardSignals is a convenience function that intercepts the specified OS signals
+// and broadcasts them to the provided Supervisor. It runs in the background until
+// the context is canceled.
+func ForwardSignals(ctx context.Context, sv *Supervisor, sigs ...os.Signal) {
+	if len(sigs) == 0 {
+		return
+	}
 
-	bsig := broadcast.NewBroadcaster[os.Signal](len(args))
+	sigch := make(chan os.Signal, 1)
+	signal.Notify(sigch, sigs...)
+
+	go func() {
+		defer signal.Stop(sigch)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sig := <-sigch:
+				sv.SignalAll(sig)
+			}
+		}
+	}()
+}
+
+// DefaultSignals represents the standard set of OS signals commonly
+// forwarded to supervised processes. Note that forwarding a signal
+// does not guarantee process termination; child processes may trap
+// or ignore these signals.
+var DefaultSignals = []os.Signal{
+	syscall.SIGHUP,
+	syscall.SIGINT,
+	syscall.SIGQUIT,
+	syscall.SIGALRM,
+	syscall.SIGTERM,
+	syscall.SIGUSR1,
+	syscall.SIGUSR2,
+}
+
+// Run runs, monitors and restarts a list of commands.
+func (sv *Supervisor) Run() error {
 	defer func() {
-		_ = bsig.Close()
+		_ = sv.bsig.Close()
+		_ = sv.bstdin.Close()
 	}()
 
-	g.Go(func() error {
-		return o.sighandler(ctx, bsig)
-	})
-
-	bstdin := broadcast.NewBroadcaster[[]byte](len(args))
-	defer func() {
-		_ = bstdin.Close()
-	}()
+	g, ctx := errgroup.WithContext(sv.ctx)
 
 	var startupWg sync.WaitGroup
-	startupWg.Add(len(args))
+	startupWg.Add(len(sv.cmds))
 
 	g.Go(func() error {
 		startupWg.Wait()
-		return o.stdinhandler(ctx, bstdin)
+		return sv.stdinhandler(ctx)
 	})
 
-	for _, v := range args {
+	for _, v := range sv.cmds {
 		g.Go(func() error {
 			isFirstRun := true
 
@@ -366,7 +345,7 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 					notifyReady = func() {} // No-op for subsequent restarts
 				}
 
-				err := o.run(ctx, bsig, bstdin, v, notifyReady)
+				err := sv.run(ctx, v, notifyReady)
 				isFirstRun = false
 
 				select {
@@ -379,7 +358,7 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 					return err
 				}
 
-				if rerr := o.retry(v, err); rerr != nil {
+				if rerr := sv.cfg.retry(v, err); rerr != nil {
 					return rerr
 				}
 			}
@@ -387,6 +366,11 @@ func (o *Opt) Supervise(args ...*Cmd) error {
 	}
 
 	return g.Wait()
+}
+
+// SignalAll broadcasts the given OS signal to all currently supervised processes.
+func (sv *Supervisor) SignalAll(sig os.Signal) {
+	sv.bsig.Submit(sig)
 }
 
 type ExitError struct {
@@ -409,13 +393,13 @@ func (e *ExitError) String() string {
 	return e.Cmd.String()
 }
 
-func (o *Opt) run(ctx context.Context, b broadcast.Broadcaster[os.Signal], bin broadcast.Broadcaster[[]byte], argv *Cmd, notifyReady func()) *ExitError {
+func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *ExitError {
 	cmd := exec.CommandContext(ctx, argv.Path, argv.Args[1:]...)
 	cmd.Stdout = argv.Stdout
 	cmd.Stderr = argv.Stderr
 	cmd.Env = argv.Env
 	cmd.Cancel = func() error {
-		return o.cancelFunc(cmd, o.cancelSignal)
+		return sv.cfg.cancelFunc(cmd, sv.cfg.cancelSignal)
 	}
 	cmd.SysProcAttr = argv.SysProcAttr
 
@@ -438,13 +422,13 @@ func (o *Opt) run(ctx context.Context, b broadcast.Broadcaster[os.Signal], bin b
 		}
 	}
 
-	if o.EOF.Load() {
+	if sv.EOF.Load() {
 		_ = stdinPipe.Close()
 		notifyReady()
 	} else {
-		byteCh := make(chan []byte)
-		bin.Register(byteCh)
-		defer bin.Unregister(byteCh)
+		byteCh := make(chan []byte, 1)
+		sv.bstdin.Register(byteCh)
+		defer sv.bstdin.Unregister(byteCh)
 
 		runDone := make(chan struct{})
 		defer close(runDone)
@@ -457,8 +441,6 @@ func (o *Opt) run(ctx context.Context, b broadcast.Broadcaster[os.Signal], bin b
 			}()
 			for {
 				select {
-				case <-ctx.Done():
-					return
 				case <-runDone:
 					return
 				case chunk, ok := <-byteCh:
@@ -479,15 +461,15 @@ func (o *Opt) run(ctx context.Context, b broadcast.Broadcaster[os.Signal], bin b
 		waitch <- cmd.Wait()
 	}()
 
-	return o.waitpid(waitch, b, cmd)
+	return sv.waitpid(waitch, cmd)
 }
 
-func (o *Opt) waitpid(waitch <-chan error, b broadcast.Broadcaster[os.Signal], cmd *exec.Cmd) *ExitError {
+func (sv *Supervisor) waitpid(waitch <-chan error, cmd *exec.Cmd) *ExitError {
 	var ee *exec.ExitError
 
-	ch := make(chan os.Signal)
-	b.Register(ch)
-	defer b.Unregister(ch)
+	ch := make(chan os.Signal, 1)
+	sv.bsig.Register(ch)
+	defer sv.bsig.Unregister(ch)
 
 	for {
 		select {

@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
+	"slices"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -77,17 +79,20 @@ func main() {
 		programLevel.Set(slog.LevelDebug)
 	}
 
-	var count atomic.Int32
-
-	count.Store(int32(*retryCount))
-
-	var t *time.Ticker
-
-	if *retryPeriod > 0 {
-		t = time.NewTicker(*retryPeriod)
+	if *help || flag.NArg() < 1 {
+		usage()
+		os.Exit(2)
 	}
 
 	retry := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+		var count atomic.Int32
+		count.Store(int32(*retryCount))
+
+		var t *time.Ticker
+		if *retryPeriod > 0 {
+			t = time.NewTicker(*retryPeriod)
+		}
+
 		if ee != nil {
 			l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		}
@@ -126,20 +131,9 @@ func main() {
 		return nil
 	}
 
-	if *help || flag.NArg() < 1 {
-		usage()
-		os.Exit(2)
-	}
-
-	s := supervises.New(
-		context.Background(),
-		supervises.WithCancelSignal(syscall.Signal(*sig)),
-		supervises.WithRetry(retry),
-	)
-
 	var ee *supervises.ExitError
 
-	cmd, err := s.Cmd(flag.Args()...)
+	cmds, err := supervises.Parse(flag.Args()...)
 	if err != nil {
 		if !errors.As(err, &ee) {
 			l.Debug("command failed", "error", err)
@@ -150,7 +144,34 @@ func main() {
 		os.Exit(ee.ExitCode)
 	}
 
-	if err := s.Supervise(cmd...); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sv := supervises.New(ctx, cmds, supervises.WithCancelSignal(syscall.Signal(*sig)), supervises.WithRetry(retry))
+
+	supervises.ForwardSignals(ctx, sv, slices.DeleteFunc(supervises.DefaultSignals, func(sig os.Signal) bool { return sig == syscall.SIGINT })...)
+
+	sigintCh := make(chan os.Signal, 1)
+	signal.Notify(sigintCh, syscall.SIGINT)
+
+	go func() {
+		count := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigintCh:
+				if count > 0 {
+					cancel()
+					return
+				}
+
+				sv.SignalAll(syscall.SIGINT)
+				count++
+			}
+		}
+	}()
+
+	if err := sv.Run(); err != nil {
 		if !errors.As(err, &ee) {
 			l.Debug("command failed", "error", err)
 			os.Exit(128)
