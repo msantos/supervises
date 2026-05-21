@@ -146,7 +146,10 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sv := supervises.New(ctx, cmds, supervises.WithCancelSignal(syscall.Signal(*sig)), supervises.WithRetry(retry))
+	sv := supervises.New(ctx, cmds,
+		supervises.WithRetry(retry),
+		supervises.WithCancelFunc(func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }),
+	)
 
 	supervises.ForwardSignals(ctx, sv, slices.DeleteFunc(supervises.DefaultSignals, func(sig os.Signal) bool { return sig == syscall.SIGINT })...)
 

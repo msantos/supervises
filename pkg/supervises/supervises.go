@@ -24,10 +24,9 @@ var (
 )
 
 type Config struct {
-	cancelFunc   func(*exec.Cmd, syscall.Signal) error
-	cancelSignal syscall.Signal
-	retry        func(*Cmd, *ExitError) *ExitError
-	stdin        io.ReadCloser
+	cancelFunc func(*exec.Cmd) error
+	retry      func(*Cmd, *ExitError) *ExitError
+	stdin      io.ReadCloser
 }
 
 type Option func(*Config)
@@ -43,16 +42,9 @@ type Supervisor struct {
 }
 
 // WithCancelFunc sets the function to reap cancelled subprocesses.
-func WithCancelFunc(f func(*exec.Cmd, syscall.Signal) error) Option {
+func WithCancelFunc(f func(*exec.Cmd) error) Option {
 	return func(o *Config) {
 		o.cancelFunc = f
-	}
-}
-
-// WithCancelSignal sets the signal sent to subprocesses on exit.
-func WithCancelSignal(sig syscall.Signal) Option {
-	return func(o *Config) {
-		o.cancelSignal = sig
 	}
 }
 
@@ -74,16 +66,15 @@ func WithStdin(r io.ReadCloser) Option {
 
 // New returns configuration for supervisors.
 //
-// # Cancel Function and Signal
+// # Cancel Function
 //
 // The default cancel function signals supervised processes if the supervisor
 // exits, e.g., due to timeout. The cancel signal defaults to SIGKILL.
 func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 	cfg := &Config{
-		cancelFunc: func(cmd *exec.Cmd, sig syscall.Signal) error {
-			return cmd.Process.Signal(sig)
+		cancelFunc: func(cmd *exec.Cmd) error {
+			return cmd.Process.Signal(syscall.SIGKILL)
 		},
-		cancelSignal: syscall.SIGKILL,
 
 		retry: func(_ *Cmd, _ *ExitError) *ExitError {
 			time.Sleep(time.Second)
@@ -399,7 +390,7 @@ func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *E
 	cmd.Stderr = argv.Stderr
 	cmd.Env = argv.Env
 	cmd.Cancel = func() error {
-		return sv.cfg.cancelFunc(cmd, sv.cfg.cancelSignal)
+		return sv.cfg.cancelFunc(cmd)
 	}
 	cmd.SysProcAttr = argv.SysProcAttr
 
