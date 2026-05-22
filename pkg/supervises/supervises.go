@@ -38,7 +38,7 @@ type Supervisor struct {
 
 	bsig   broadcast.Broadcaster[os.Signal]
 	bstdin broadcast.Broadcaster[[]byte]
-	EOF    atomic.Bool
+	eof    atomic.Bool
 }
 
 // WithCancelFunc sets the function to reap cancelled subprocesses.
@@ -228,7 +228,7 @@ func cmd(arg string) (*Cmd, error) {
 func (sv *Supervisor) stdinhandler(ctx context.Context) error {
 	defer func() {
 		_ = sv.cfg.stdin.Close()
-		sv.EOF.Store(true)
+		sv.eof.Store(true)
 		sv.bstdin.Submit(nil)
 	}()
 
@@ -413,7 +413,7 @@ func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *E
 		}
 	}
 
-	if sv.EOF.Load() {
+	if sv.eof.Load() {
 		_ = stdinPipe.Close()
 		notifyReady()
 	} else {
