@@ -186,37 +186,16 @@ func cmd(arg string) (*Cmd, error) {
 
 	argv, err := shellwords.Parse(arg)
 	if err != nil {
-		return nil, &ExitError{
-			Cmd: &exec.Cmd{
-				Path: os.Args[0],
-				Args: []string{arg},
-			},
-			Err:      err,
-			ExitCode: 2,
-		}
+		return nil, err
 	}
 
 	if len(argv) == 0 {
-		return nil, &ExitError{
-			Cmd: &exec.Cmd{
-				Path: os.Args[0],
-				Args: []string{arg},
-			},
-			Err:      ErrInvalidCommand,
-			ExitCode: 2,
-		}
+		return nil, ErrInvalidCommand
 	}
 
 	arg0, err := exec.LookPath(argv[0])
 	if err != nil {
-		return nil, &ExitError{
-			Cmd: &exec.Cmd{
-				Path: argv[0],
-				Args: argv,
-			},
-			Err:      err,
-			ExitCode: 127,
-		}
+		return nil, err
 	}
 
 	c.Path = arg0

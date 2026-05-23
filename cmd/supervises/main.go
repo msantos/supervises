@@ -135,13 +135,8 @@ func main() {
 
 	cmds, err := supervises.Parse(flag.Args()...)
 	if err != nil {
-		if !errors.As(err, &ee) {
-			l.Debug("command failed", "error", err)
-			os.Exit(126)
-		}
-
-		l.Error("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
-		os.Exit(ee.ExitCode)
+		l.Debug("command failed", "error", err)
+		os.Exit(2)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
