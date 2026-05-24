@@ -38,14 +38,14 @@ func TestSupervisor_Run(t *testing.T) {
 	}
 
 	sv := supervises.New(ctx, cmds, supervises.WithRetry(
-		func(_ *supervises.Cmd, eerr *supervises.ExitError) *supervises.ExitError {
-			if eerr == nil {
-				return &supervises.ExitError{
-					Err:      ErrRetryAttemptsExceeded,
-					ExitCode: 0,
-				}
+		func(_ *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+			if ee != nil {
+				return ee
 			}
-			return eerr
+			return &supervises.ExitError{
+				Err:      ErrRetryAttemptsExceeded,
+				ExitCode: 0,
+			}
 		},
 	))
 
