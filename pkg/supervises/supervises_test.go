@@ -20,10 +20,21 @@ const (
 )
 
 func Test_Parse(t *testing.T) {
-	_, err := supervises.Parse("cat", "cat", "nonexist-executable", "cat")
-	if err == supervises.ErrInvalidCommand {
+	if _, err := supervises.Parse("cat", "cat", "cat", "cat"); err != nil {
 		t.Errorf("unexpected error: %v", err)
 		return
+	}
+
+	if _, err := supervises.Parse("cat", "cat", "nonexist-executable", "cat"); err == nil {
+		t.Errorf("no path error: %v", err)
+		return
+	}
+
+	if _, err := supervises.Parse("", ""); err != nil {
+		if !errors.Is(err, supervises.ErrInvalidCommand) {
+			t.Errorf("unexpected error: %v", err)
+			return
+		}
 	}
 }
 
