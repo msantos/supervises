@@ -186,16 +186,16 @@ func cmd(arg string) (*Cmd, error) {
 
 	argv, err := shellwords.Parse(arg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", arg, err)
 	}
 
 	if len(argv) == 0 {
-		return nil, ErrInvalidCommand
+		return nil, fmt.Errorf("%s: %w", arg, ErrInvalidCommand)
 	}
 
 	arg0, err := exec.LookPath(argv[0])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", arg, err)
 	}
 
 	c.Path = arg0
