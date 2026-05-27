@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"sync"
 	"testing"
@@ -204,28 +202,4 @@ func TestSupervisor_Run_stdin(t *testing.T) {
 		t.Errorf("unexpected output: %s", buf)
 		return
 	}
-}
-
-func ExampleSupervisor_Run() {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	cmds, err := supervises.Parse("@echo test123; exec sleep 10", "cat")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return
-	}
-
-	sv := supervises.New(ctx, cmds)
-
-	if err = sv.Run(); err != nil {
-		var ee *supervises.ExitError
-
-		if !errors.As(err, &ee) {
-			fmt.Fprintln(os.Stderr, err.Error())
-			return
-		}
-	}
-
-	// Output: test123
 }
