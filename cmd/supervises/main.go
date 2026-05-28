@@ -135,7 +135,7 @@ func main() {
 
 	cmds, err := supervises.Parse(flag.Args()...)
 	if err != nil {
-		l.Debug("command failed", "error", err)
+		l.Info("parse error", "error", err)
 		os.Exit(2)
 	}
 
