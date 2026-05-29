@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	ErrInvalidCommand = errors.New("invalid command")
+	ErrNoCommand = errors.New("no command provided")
 )
 
 type Config struct {
@@ -190,7 +190,7 @@ func cmd(arg string) (*Cmd, error) {
 	}
 
 	if len(argv) == 0 {
-		return nil, fmt.Errorf("%s: %w", arg, ErrInvalidCommand)
+		return nil, fmt.Errorf("%s: %w", arg, ErrNoCommand)
 	}
 
 	arg0, err := exec.LookPath(argv[0])

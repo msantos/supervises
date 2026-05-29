@@ -29,7 +29,7 @@ func Test_Parse(t *testing.T) {
 	}
 
 	if _, err := supervises.Parse("", ""); err != nil {
-		if !errors.Is(err, supervises.ErrInvalidCommand) {
+		if !errors.Is(err, supervises.ErrNoCommand) {
 			t.Errorf("unexpected error: %v", err)
 			return
 		}
