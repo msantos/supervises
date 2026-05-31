@@ -46,13 +46,13 @@ func TestSupervisor_Run(t *testing.T) {
 		return
 	}
 
-	sv := supervises.New(ctx, cmds, supervises.WithRetry(
+	sv := supervises.New(ctx, cmds, supervises.WithOnExit(
 		func(_ *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
 			if ee != nil {
 				return ee
 			}
 			return &supervises.ExitError{
-				Err:      ErrRetryAttemptsExceeded,
+				Err:      ErrOnExitAttemptsExceeded,
 				ExitCode: 0,
 			}
 		},
@@ -81,7 +81,7 @@ func TestSupervisor_Run(t *testing.T) {
 	t.Error("supervisor exited")
 }
 
-var ErrRetryAttemptsExceeded = errors.New("retry attempts exceeded")
+var ErrOnExitAttemptsExceeded = errors.New("retry attempts exceeded")
 
 type retryState struct {
 	count int
@@ -90,7 +90,7 @@ type retryState struct {
 func (r *retryState) retry(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
 	if r.count > 0 {
 		return &supervises.ExitError{
-			Err:      ErrRetryAttemptsExceeded,
+			Err:      ErrOnExitAttemptsExceeded,
 			ExitCode: 111,
 		}
 	}
@@ -108,7 +108,7 @@ func TestSupervisor_Run_retry(t *testing.T) {
 
 	r := &retryState{}
 
-	sv := supervises.New(context.Background(), cmds, supervises.WithRetry(r.retry))
+	sv := supervises.New(context.Background(), cmds, supervises.WithOnExit(r.retry))
 
 	if err := sv.Run(); err != nil {
 		var ee *supervises.ExitError
@@ -116,7 +116,7 @@ func TestSupervisor_Run_retry(t *testing.T) {
 			t.Errorf("%v", err)
 			return
 		}
-		if !errors.Is(ee.Err, ErrRetryAttemptsExceeded) {
+		if !errors.Is(ee.Err, ErrOnExitAttemptsExceeded) {
 			t.Errorf("%v", err)
 			return
 		}
@@ -161,7 +161,7 @@ func TestSupervisor_Run_stdin(t *testing.T) {
 
 	sv := supervises.New(ctx, cmds,
 		supervises.WithStdin(io.NopCloser(bytes.NewReader([]byte("testing 123\n")))),
-		supervises.WithRetry(
+		supervises.WithOnExit(
 			func(cmd *supervises.Cmd, _ *supervises.ExitError) *supervises.ExitError {
 				wg.Done()
 				wg.Wait()

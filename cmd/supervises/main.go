@@ -142,7 +142,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sv := supervises.New(ctx, cmds,
-		supervises.WithRetry(retry),
+		supervises.WithOnExit(retry),
 		supervises.WithCancelFunc(func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }),
 	)
 

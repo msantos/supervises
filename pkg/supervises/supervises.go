@@ -25,7 +25,7 @@ var (
 
 type Config struct {
 	cancelFunc func(*exec.Cmd) error
-	retry      func(*Cmd, *ExitError) *ExitError
+	onExit     func(*Cmd, *ExitError) *ExitError
 	stdin      io.ReadCloser
 }
 
@@ -48,11 +48,12 @@ func WithCancelFunc(f func(*exec.Cmd) error) Option {
 	}
 }
 
-// WithRetry sets the retry behaviour.
-func WithRetry(retry func(*Cmd, *ExitError) *ExitError) Option {
+// WithOnExit sets the function called when the supervised process
+// exits. The supervised process is restarted if the function returns nil.
+func WithOnExit(onExit func(*Cmd, *ExitError) *ExitError) Option {
 	return func(o *Config) {
-		if retry != nil {
-			o.retry = retry
+		if onExit != nil {
+			o.onExit = onExit
 		}
 	}
 }
@@ -76,7 +77,7 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 			return cmd.Process.Signal(syscall.SIGKILL)
 		},
 
-		retry: func(_ *Cmd, _ *ExitError) *ExitError {
+		onExit: func(_ *Cmd, _ *ExitError) *ExitError {
 			time.Sleep(time.Second)
 			return nil
 		},
@@ -285,7 +286,7 @@ var DefaultSignals = []os.Signal{
 	syscall.SIGUSR2,
 }
 
-// Run runs, monitors and restarts a list of commands.
+// Run runs, monitors and onExits a list of commands.
 func (sv *Supervisor) Run() error {
 	defer func() {
 		_ = sv.bsig.Close()
@@ -312,7 +313,7 @@ func (sv *Supervisor) Run() error {
 					var once sync.Once
 					notifyReady = func() { once.Do(func() { startupWg.Done() }) }
 				} else {
-					notifyReady = func() {} // No-op for subsequent restarts
+					notifyReady = func() {} // No-op for subsequent onExits
 				}
 
 				err := sv.run(ctx, v, notifyReady)
@@ -328,7 +329,7 @@ func (sv *Supervisor) Run() error {
 					return err
 				}
 
-				if rerr := sv.cfg.retry(v, err); rerr != nil {
+				if rerr := sv.cfg.onExit(v, err); rerr != nil {
 					return rerr
 				}
 			}
