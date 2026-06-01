@@ -67,9 +67,9 @@ func main() {
 	sig := flag.Int("signal", int(syscall.SIGKILL), "signal sent to subprocesses on exit")
 	verbose := flag.Bool("verbose", false, "Enable debug messages")
 
-	retryWait := flag.Duration("retry-wait", 1*time.Second, "retry backoff interval")
-	retryCount := flag.Int("retry-count", 0, "retry limit before exiting (0: no limit)")
-	retryPeriod := flag.Duration("retry-period", 0, "time interval for retries (0: no limit)")
+	restartWait := flag.Duration("restart-wait", 1*time.Second, "restart backoff interval")
+	restartCount := flag.Int("restart-count", 0, "restart limit before exiting (0: no limit)")
+	restartPeriod := flag.Duration("restart-period", 0, "time interval for retries (0: no limit)")
 	errExit := flag.Bool("errexit", false, "retries apply to tasks exiting with a non-0 status")
 
 	flag.Usage = func() { usage() }
@@ -84,24 +84,24 @@ func main() {
 		os.Exit(2)
 	}
 
-	retry := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+	restart := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
 		var count atomic.Int32
-		count.Store(int32(*retryCount))
+		count.Store(int32(*restartCount))
 
 		var t *time.Ticker
-		if *retryPeriod > 0 {
-			t = time.NewTicker(*retryPeriod)
+		if *restartPeriod > 0 {
+			t = time.NewTicker(*restartPeriod)
 		}
 
 		if ee != nil {
 			l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		}
 
-		if *retryCount > 0 {
+		if *restartCount > 0 {
 			if t != nil {
 				select {
 				case <-t.C:
-					count.Store(int32(*retryCount))
+					count.Store(int32(*restartCount))
 				default:
 				}
 			}
@@ -127,7 +127,7 @@ func main() {
 			}
 		}
 
-		time.Sleep(*retryWait)
+		time.Sleep(*restartWait)
 		return nil
 	}
 
@@ -142,7 +142,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sv := supervises.New(ctx, cmds,
-		supervises.WithOnExit(retry),
+		supervises.WithOnExit(restart),
 		supervises.WithCancelFunc(func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }),
 	)
 
