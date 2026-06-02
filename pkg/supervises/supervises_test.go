@@ -81,13 +81,13 @@ func TestSupervisor_Run(t *testing.T) {
 	t.Error("supervisor exited")
 }
 
-var ErrOnExitAttemptsExceeded = errors.New("retry attempts exceeded")
+var ErrOnExitAttemptsExceeded = errors.New("restart attempts exceeded")
 
-type retryState struct {
+type restartState struct {
 	count int
 }
 
-func (r *retryState) retry(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+func (r *restartState) restart(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
 	if r.count > 0 {
 		return &supervises.ExitError{
 			Err:      ErrOnExitAttemptsExceeded,
@@ -99,16 +99,16 @@ func (r *retryState) retry(c *supervises.Cmd, ee *supervises.ExitError) *supervi
 	return nil
 }
 
-func TestSupervisor_Run_retry(t *testing.T) {
+func TestSupervisor_Run_restart(t *testing.T) {
 	cmds, err := supervises.Parse("@echo >/dev/null", "cat", "cat")
 	if err != nil {
 		t.Errorf("invalid command: %v", err)
 		return
 	}
 
-	r := &retryState{}
+	r := &restartState{}
 
-	sv := supervises.New(context.Background(), cmds, supervises.WithOnExit(r.retry))
+	sv := supervises.New(context.Background(), cmds, supervises.WithOnExit(r.restart))
 
 	if err := sv.Run(); err != nil {
 		var ee *supervises.ExitError

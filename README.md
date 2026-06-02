@@ -67,13 +67,13 @@ verbose
 : Enable debug messages
 
 errexit
-: retries apply to tasks exiting with a non-0 status
+: restarts apply to tasks exiting with a non-0 status
 
-retry-count int
-: retry limit before exiting (0: no limit)
+restart-count int
+: restart limit before exiting (0: no limit)
 
-retry-period duration
-: time interval for retries (0: no limit)
+restart-period duration
+: time interval for restarts (0: no limit)
 
-retry-wait duration
-: retry backoff interval (default 1s)
+restart-wait duration
+: restart backoff interval (default 1s)

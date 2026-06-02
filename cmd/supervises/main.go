@@ -69,8 +69,8 @@ func main() {
 
 	restartWait := flag.Duration("restart-wait", 1*time.Second, "restart backoff interval")
 	restartCount := flag.Int("restart-count", 0, "restart limit before exiting (0: no limit)")
-	restartPeriod := flag.Duration("restart-period", 0, "time interval for retries (0: no limit)")
-	errExit := flag.Bool("errexit", false, "retries apply to tasks exiting with a non-0 status")
+	restartPeriod := flag.Duration("restart-period", 0, "time interval for restarts (0: no limit)")
+	errExit := flag.Bool("errexit", false, "restarts apply to tasks exiting with a non-0 status")
 
 	flag.Usage = func() { usage() }
 	flag.Parse()
