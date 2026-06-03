@@ -5,4 +5,5 @@ go 1.25.0
 require (
 	github.com/mattn/go-shellwords v1.0.12
 	golang.org/x/sync v0.20.0
+	golang.org/x/sys v0.45.0
 )

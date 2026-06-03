@@ -25,6 +25,7 @@ var (
 
 type Config struct {
 	cancelFunc func(*exec.Cmd) error
+	onStart    func(*Cmd, int)
 	onExit     func(*Cmd, *ExitError) *ExitError
 	stdin      io.ReadCloser
 }
@@ -45,6 +46,16 @@ type Supervisor struct {
 func WithCancelFunc(f func(*exec.Cmd) error) Option {
 	return func(o *Config) {
 		o.cancelFunc = f
+	}
+}
+
+// WithOnStart sets a callback function executed every time a command
+// successfully starts, providing the original configuration and the active PID.
+func WithOnStart(f func(cmd *Cmd, pid int)) Option {
+	return func(c *Config) {
+		if f != nil {
+			c.onStart = f
+		}
 	}
 }
 
@@ -76,6 +87,8 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 		cancelFunc: func(cmd *exec.Cmd) error {
 			return cmd.Process.Signal(syscall.SIGKILL)
 		},
+
+		onStart: func(_ *Cmd, _ int) {},
 
 		onExit: func(_ *Cmd, _ *ExitError) *ExitError {
 			time.Sleep(time.Second)
@@ -392,6 +405,8 @@ func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *E
 			ExitCode: status,
 		}
 	}
+
+	sv.cfg.onStart(argv, cmd.Process.Pid)
 
 	if sv.eof.Load() {
 		_ = stdinPipe.Close()
