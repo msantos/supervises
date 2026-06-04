@@ -90,7 +90,12 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 
 		onStart: func(_ *Cmd, _ int) {},
 
-		onExit: func(_ *Cmd, _ *ExitError) *ExitError {
+		onExit: func(_ *Cmd, eerr *ExitError) *ExitError {
+			if eerr != nil {
+				return eerr
+			}
+
+			// Restart the process.
 			time.Sleep(time.Second)
 			return nil
 		},
