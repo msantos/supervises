@@ -82,7 +82,9 @@ func ExampleSupervisor_Run_onStart() {
 		}
 
 		go func() {
-			defer unix.Close(pidfd)
+			defer func() {
+				_ = unix.Close(pidfd)
+			}()
 
 			time.Sleep(1 * time.Second)
 
