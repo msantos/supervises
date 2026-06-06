@@ -86,7 +86,7 @@ func ExampleSupervisor_Run_onStart() {
 				_ = unix.Close(pidfd)
 			}()
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(5 * time.Second)
 
 			err := unix.PidfdSendSignal(pidfd, unix.SIGTERM, nil, 0)
 			if err != nil {
