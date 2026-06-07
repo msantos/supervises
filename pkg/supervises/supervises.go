@@ -379,6 +379,10 @@ func (e *ExitError) Error() string {
 }
 
 func (e *ExitError) String() string {
+	// Fixed by https://github.com/golang/go/commit/33241d7298e0c621cfc4cc9f878dba9eff2b1c3d
+	if len(e.Cmd.Args) == 0 {
+		e.Cmd.Args = []string{e.Cmd.Path}
+	}
 	return e.Cmd.String()
 }
 

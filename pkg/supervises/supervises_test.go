@@ -168,7 +168,6 @@ func TestSupervisor_Run_stdin(t *testing.T) {
 				return &supervises.ExitError{
 					Cmd: &exec.Cmd{
 						Path: cmd.Path,
-						Args: cmd.Args,
 					},
 					Err:      nil,
 					ExitCode: 0,
