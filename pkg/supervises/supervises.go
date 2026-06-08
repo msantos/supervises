@@ -124,6 +124,7 @@ type Cmd struct {
 	Dir         string
 	Stdout      io.Writer
 	Stderr      io.Writer
+	EOF         bool
 	ExtraFiles  []*os.File
 	SysProcAttr *syscall.SysProcAttr
 }
@@ -150,10 +151,15 @@ func (c *Cmd) String() string {
 //
 //	supervises @'nc -l 8080 >nc.log'
 //
-// - =: discard stdout/stderr
+// - =: discard stdin, stdout and stderr
 //
-//	# equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
+//	# equivalent to: supervises @'nc -l 8080 </dev/null >/dev/null 2>&1'
 //	supervises ='nc -l 8080'
+//
+// * =0: discard stdin
+//
+//	# equivalent to: supervises @'nc -l 8080 </dev/null'
+//	supervises =0'nc -l 8080'
 //
 // * =1: discard stdout
 //
@@ -164,6 +170,11 @@ func (c *Cmd) String() string {
 //
 //	# equivalent to: supervises @'nc -l 8080 2>/dev/null'
 //	supervises =2'nc -l 8080'
+//
+// * =3: discard stdout and stderr
+//
+//	# equivalent to: supervises @'nc -l 8080 </dev/null >/dev/null 2>&1'
+//	supervises =3'nc -l 8080'
 func Parse(args ...string) ([]*Cmd, error) {
 	cmds := make([]*Cmd, 0, len(args))
 	for _, v := range args {
@@ -191,15 +202,23 @@ func cmd(arg string) (*Cmd, error) {
 		c.Path = "/bin/sh"
 		c.Args = []string{c.Path, "-c", strings.TrimPrefix(arg, "@")}
 		return c, nil
+	case strings.HasPrefix(arg, "=0"):
+		c.EOF = true
+		arg = strings.TrimPrefix(arg, "=0")
 	case strings.HasPrefix(arg, "=1"):
 		c.Stdout = io.Discard
 		arg = strings.TrimPrefix(arg, "=1")
 	case strings.HasPrefix(arg, "=2"):
 		c.Stderr = io.Discard
 		arg = strings.TrimPrefix(arg, "=2")
+	case strings.HasPrefix(arg, "=3"):
+		c.Stdout = io.Discard
+		c.Stderr = io.Discard
+		arg = strings.TrimPrefix(arg, "=3")
 	case strings.HasPrefix(arg, "="):
 		c.Stdout = io.Discard
 		c.Stderr = io.Discard
+		c.EOF = true
 		arg = strings.TrimPrefix(arg, "=")
 	}
 
@@ -417,7 +436,7 @@ func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *E
 
 	sv.cfg.onStart(argv, cmd.Process.Pid)
 
-	if sv.eof.Load() {
+	if sv.eof.Load() || argv.EOF {
 		_ = stdinPipe.Close()
 		notifyReady()
 	} else {

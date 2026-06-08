@@ -34,11 +34,18 @@ supervises 'nc -vnl 7070' 'nc -vnl 7071' 'nc -vnl 7072'
   supervises @'nc -l 8080 >nc.log'
   ```
 
-* =: discard stdout/stderr
+* =: discard stdin, stdout and stderr
 
   ```
-  # equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
+  # equivalent to: supervises @'nc -l 8080 </dev/null >/dev/null 2>&1'
   supervises ='nc -l 8080'
+  ```
+
+* =0: discard stdin
+
+  ```
+  # equivalent to: supervises @'nc -l 8080 </dev/null'
+  supervises =0'nc -l 8080'
   ```
 
 * =1: discard stdout
@@ -53,6 +60,13 @@ supervises 'nc -vnl 7070' 'nc -vnl 7071' 'nc -vnl 7072'
   ```
   # equivalent to: supervises @'nc -l 8080 2>/dev/null'
   supervises =2'nc -l 8080'
+  ```
+
+* =3: discard stdout and stderr
+
+  ```
+  # equivalent to: supervises @'nc -l 8080 >/dev/null 2>&1'
+  supervises =3'nc -l 8080'
   ```
 
 # OPTIONS
