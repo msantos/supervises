@@ -24,10 +24,9 @@ var (
 )
 
 type Config struct {
-	cancelFunc func(*exec.Cmd) error
-	onStart    func(*Cmd, int)
-	onExit     func(*Cmd, *ExitError) *ExitError
-	stdin      io.ReadCloser
+	onStart func(*Cmd, int)
+	onExit  func(*Cmd, *ExitError) *ExitError
+	stdin   io.ReadCloser
 }
 
 type Option func(*Config)
@@ -40,13 +39,6 @@ type Supervisor struct {
 	bsig   broadcast.Broadcaster[os.Signal]
 	bstdin broadcast.Broadcaster[[]byte]
 	eof    atomic.Bool
-}
-
-// WithCancelFunc sets the function to reap cancelled subprocesses.
-func WithCancelFunc(f func(*exec.Cmd) error) Option {
-	return func(o *Config) {
-		o.cancelFunc = f
-	}
 }
 
 // WithOnStart sets a callback function executed every time a command
@@ -77,16 +69,8 @@ func WithStdin(r io.ReadCloser) Option {
 }
 
 // New returns configuration for supervisors.
-//
-// # Cancel Function
-//
-// The default cancel function signals supervised processes if the supervisor
-// exits, e.g., due to timeout. The cancel signal defaults to SIGKILL.
 func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 	cfg := &Config{
-		cancelFunc: func(cmd *exec.Cmd) error {
-			return cmd.Process.Signal(syscall.SIGKILL)
-		},
 
 		onStart: func(_ *Cmd, _ int) {},
 
@@ -127,6 +111,8 @@ type Cmd struct {
 	EOF         bool
 	ExtraFiles  []*os.File
 	SysProcAttr *syscall.SysProcAttr
+	Cancel      func(*exec.Cmd) error
+	WaitDelay   time.Duration
 }
 
 func (c *Cmd) String() string {
@@ -194,6 +180,9 @@ func cmd(arg string) (*Cmd, error) {
 		Stderr: os.Stderr,
 		SysProcAttr: &syscall.SysProcAttr{
 			Pdeathsig: syscall.SIGKILL,
+		},
+		Cancel: func(cmd *exec.Cmd) error {
+			return cmd.Process.Signal(syscall.SIGKILL)
 		},
 	}
 
@@ -411,9 +400,11 @@ func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *E
 	cmd.Stderr = argv.Stderr
 	cmd.Env = argv.Env
 	cmd.Cancel = func() error {
-		return sv.cfg.cancelFunc(cmd)
+		return argv.Cancel(cmd)
 	}
+	cmd.Dir = argv.Dir
 	cmd.SysProcAttr = argv.SysProcAttr
+	cmd.WaitDelay = argv.WaitDelay
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {

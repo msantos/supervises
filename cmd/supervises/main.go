@@ -138,11 +138,15 @@ func main() {
 		os.Exit(2)
 	}
 
+	cancelFunc := func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }
+	for _, cmd := range cmds {
+		cmd.Cancel = cancelFunc
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sv := supervises.New(ctx, cmds,
 		supervises.WithOnExit(restart),
-		supervises.WithCancelFunc(func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }),
 	)
 
 	supervises.ForwardSignals(ctx, sv, slices.DeleteFunc(supervises.DefaultSignals, func(sig os.Signal) bool { return sig == syscall.SIGINT })...)
