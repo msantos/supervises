@@ -94,7 +94,7 @@ func main() {
 		}
 
 		if ee != nil {
-			l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
+			l.Debug("command exited", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		}
 
 		if *restartCount > 0 {
@@ -174,11 +174,11 @@ func main() {
 
 	if err := sv.Run(); err != nil {
 		if !errors.As(err, &ee) {
-			l.Debug("command failed", "error", err)
+			l.Debug("command exited", "error", err)
 			os.Exit(128)
 		}
 
-		l.Debug("command failed", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
+		l.Debug("command exited", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		os.Exit(ee.ExitCode)
 	}
 }
