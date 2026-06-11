@@ -71,9 +71,7 @@ func WithStdin(r io.ReadCloser) Option {
 // New returns configuration for supervisors.
 func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 	cfg := &Config{
-
 		onStart: func(_ *Cmd, _ int) {},
-
 		onExit: func(_ *Cmd, eerr *ExitError) *ExitError {
 			if eerr != nil {
 				return eerr
@@ -83,7 +81,6 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 			time.Sleep(time.Second)
 			return nil
 		},
-
 		stdin: os.Stdin,
 	}
 
@@ -102,17 +99,9 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 }
 
 type Cmd struct {
-	Path        string
-	Args        []string
-	Env         []string
-	Dir         string
-	Stdout      io.Writer
-	Stderr      io.Writer
-	EOF         bool
-	ExtraFiles  []*os.File
-	SysProcAttr *syscall.SysProcAttr
-	Cancel      func(*exec.Cmd) error
-	WaitDelay   time.Duration
+	exec.Cmd
+	EOF    bool
+	Cancel func(*exec.Cmd) error
 }
 
 func (c *Cmd) String() string {
@@ -175,11 +164,13 @@ func Parse(args ...string) ([]*Cmd, error) {
 
 func cmd(arg string) (*Cmd, error) {
 	c := &Cmd{
-		Env:    os.Environ(),
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-		SysProcAttr: &syscall.SysProcAttr{
-			Pdeathsig: syscall.SIGKILL,
+		Cmd: exec.Cmd{
+			Env:    os.Environ(),
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+			SysProcAttr: &syscall.SysProcAttr{
+				Pdeathsig: syscall.SIGKILL,
+			},
 		},
 		Cancel: func(cmd *exec.Cmd) error {
 			return cmd.Process.Signal(syscall.SIGKILL)
