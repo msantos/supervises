@@ -83,6 +83,9 @@ verbose
 errexit
 : restarts apply to tasks exiting with a non-0 status
 
+strategy *string*
+: restart strategy: always, on-error, on-success (default always)
+
 restart-count int
 : restart limit before exiting (0: no limit)
 

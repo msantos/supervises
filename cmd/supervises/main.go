@@ -71,6 +71,7 @@ func main() {
 	restartCount := flag.Int("restart-count", 0, "restart limit before exiting (0: no limit)")
 	restartPeriod := flag.Duration("restart-period", 0, "time interval for restarts (0: no limit)")
 	errExit := flag.Bool("errexit", false, "restarts apply to tasks exiting with a non-0 status")
+	strategy := flag.String("strategy", "always", "restart strategy (always, on-error, on-success)")
 
 	flag.Usage = func() { usage() }
 	flag.Parse()
@@ -84,37 +85,82 @@ func main() {
 		os.Exit(2)
 	}
 
-	restart := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
-		var count atomic.Int32
-		count.Store(int32(*restartCount))
+	switch *strategy {
+	case "always", "on-error", "on-success":
+	default:
+		fmt.Fprintf(os.Stderr, "invalid strategy: %s (must be one of: always, on-error, on-success)\n", *strategy)
+		usage()
+		os.Exit(2)
+	}
+
+	cmds, err := supervises.Parse(flag.Args()...)
+	if err != nil {
+		l.Info("parse error", "error", err)
+		os.Exit(2)
+	}
+
+	type commandState struct {
+		count  atomic.Int32
+		ticker *time.Ticker
+	}
+
+	cancelFunc := func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }
+
+	states := make(map[*supervises.Cmd]*commandState)
+	for _, cmd := range cmds {
+		cmd.Cancel = cancelFunc
 
 		var t *time.Ticker
 		if *restartPeriod > 0 {
 			t = time.NewTicker(*restartPeriod)
 		}
+		cs := &commandState{
+			ticker: t,
+		}
+		cs.count.Store(int32(*restartCount))
+		states[cmd] = cs
+	}
+
+	restart := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+		cs := states[c]
 
 		if ee != nil {
 			l.Debug("command exited", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
 		}
 
+		switch *strategy {
+		case "on-error":
+			if ee == nil {
+				return &supervises.ExitError{
+					Cmd: &exec.Cmd{
+						Path: c.String(),
+					},
+				}
+			}
+		case "on-success":
+			if ee != nil {
+				return ee
+			}
+		}
+
 		if *restartCount > 0 {
-			if t != nil {
+			if cs.ticker != nil {
 				select {
-				case <-t.C:
-					count.Store(int32(*restartCount))
+				case <-cs.ticker.C:
+					cs.count.Store(int32(*restartCount))
 				default:
 				}
 			}
 
 			if *errExit {
 				if ee != nil {
-					count.Add(-1)
+					cs.count.Add(-1)
 				}
 			} else {
-				count.Add(-1)
+				cs.count.Add(-1)
 			}
 
-			if count.Load() <= 0 {
+			if cs.count.Load() <= 0 {
 				if ee != nil {
 					return ee
 				}
@@ -131,17 +177,6 @@ func main() {
 	}
 
 	var ee *supervises.ExitError
-
-	cmds, err := supervises.Parse(flag.Args()...)
-	if err != nil {
-		l.Info("parse error", "error", err)
-		os.Exit(2)
-	}
-
-	cancelFunc := func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }
-	for _, cmd := range cmds {
-		cmd.Cancel = cancelFunc
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
