@@ -72,9 +72,9 @@ func WithStdin(r io.ReadCloser) Option {
 func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 	cfg := &Config{
 		onStart: func(_ *Cmd, _ int) {},
-		onExit: func(_ *Cmd, eerr *ExitError) *ExitError {
-			if eerr != nil {
-				return eerr
+		onExit: func(_ *Cmd, e *ExitError) *ExitError {
+			if e != nil {
+				return e
 			}
 
 			// Restart the process.
@@ -461,7 +461,7 @@ func (sv *Supervisor) run(ctx context.Context, argv *Cmd, notifyReady func()) *E
 }
 
 func (sv *Supervisor) waitpid(waitch <-chan error, cmd *exec.Cmd) *ExitError {
-	var ee *exec.ExitError
+	var e *exec.ExitError
 
 	ch := make(chan os.Signal, 1)
 	sv.bsig.Register(ch)
@@ -476,7 +476,7 @@ func (sv *Supervisor) waitpid(waitch <-chan error, cmd *exec.Cmd) *ExitError {
 				return nil
 			}
 
-			if !errors.As(err, &ee) {
+			if !errors.As(err, &e) {
 				return &ExitError{
 					Cmd:      cmd,
 					ExitCode: 128,
@@ -484,7 +484,7 @@ func (sv *Supervisor) waitpid(waitch <-chan error, cmd *exec.Cmd) *ExitError {
 				}
 			}
 
-			waitStatus, ok := ee.Sys().(syscall.WaitStatus)
+			waitStatus, ok := e.Sys().(syscall.WaitStatus)
 			if !ok {
 				return &ExitError{
 					Cmd:      cmd,

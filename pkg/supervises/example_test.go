@@ -26,9 +26,9 @@ func ExampleSupervisor_Run() {
 	sv := supervises.New(ctx, cmds)
 
 	if err = sv.Run(); err != nil {
-		var ee *supervises.ExitError
+		var e *supervises.ExitError
 
-		if !errors.As(err, &ee) {
+		if !errors.As(err, &e) {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return
 		}
@@ -52,9 +52,9 @@ func ExampleSupervisor_Run_signal_handling() {
 	supervises.ForwardSignals(ctx, sv, supervises.DefaultSignals...)
 
 	if err = sv.Run(); err != nil {
-		var ee *supervises.ExitError
+		var e *supervises.ExitError
 
-		if !errors.As(err, &ee) {
+		if !errors.As(err, &e) {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return
 		}
@@ -98,9 +98,9 @@ func ExampleSupervisor_Run_onStart() {
 	supervises.ForwardSignals(ctx, sv, supervises.DefaultSignals...)
 
 	if err = sv.Run(); err != nil {
-		var ee *supervises.ExitError
+		var e *supervises.ExitError
 
-		if !errors.As(err, &ee) {
+		if !errors.As(err, &e) {
 			fmt.Fprintln(os.Stderr, err.Error())
 			return
 		}

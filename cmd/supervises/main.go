@@ -121,16 +121,16 @@ func main() {
 		states[cmd] = cs
 	}
 
-	restart := func(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+	restart := func(c *supervises.Cmd, e *supervises.ExitError) *supervises.ExitError {
 		cs := states[c]
 
-		if ee != nil {
-			l.Debug("command exited", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
+		if e != nil {
+			l.Debug("command exited", "argv", e.String(), "status", e.ExitCode, "error", e.Err)
 		}
 
 		switch *strategy {
 		case "on-error":
-			if ee == nil {
+			if e == nil {
 				return &supervises.ExitError{
 					Cmd: &exec.Cmd{
 						Path: c.String(),
@@ -138,8 +138,8 @@ func main() {
 				}
 			}
 		case "on-success":
-			if ee != nil {
-				return ee
+			if e != nil {
+				return e
 			}
 		}
 
@@ -153,7 +153,7 @@ func main() {
 			}
 
 			if *errExit {
-				if ee != nil {
+				if e != nil {
 					cs.count.Add(-1)
 				}
 			} else {
@@ -161,8 +161,8 @@ func main() {
 			}
 
 			if cs.count.Load() <= 0 {
-				if ee != nil {
-					return ee
+				if e != nil {
+					return e
 				}
 				return &supervises.ExitError{
 					Cmd: &exec.Cmd{
@@ -176,7 +176,7 @@ func main() {
 		return nil
 	}
 
-	var ee *supervises.ExitError
+	var e *supervises.ExitError
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -208,12 +208,12 @@ func main() {
 	}()
 
 	if err := sv.Run(); err != nil {
-		if !errors.As(err, &ee) {
+		if !errors.As(err, &e) {
 			l.Debug("command exited", "error", err)
 			os.Exit(128)
 		}
 
-		l.Debug("command exited", "argv", ee.String(), "status", ee.ExitCode, "error", ee.Err)
-		os.Exit(ee.ExitCode)
+		l.Debug("command exited", "argv", e.String(), "status", e.ExitCode, "error", e.Err)
+		os.Exit(e.ExitCode)
 	}
 }

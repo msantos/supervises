@@ -47,9 +47,9 @@ func TestSupervisor_Run(t *testing.T) {
 	}
 
 	sv := supervises.New(ctx, cmds, supervises.WithOnExit(
-		func(_ *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
-			if ee != nil {
-				return ee
+		func(_ *supervises.Cmd, e *supervises.ExitError) *supervises.ExitError {
+			if e != nil {
+				return e
 			}
 			return &supervises.ExitError{
 				Err:      ErrOnExitAttemptsExceeded,
@@ -59,18 +59,18 @@ func TestSupervisor_Run(t *testing.T) {
 	))
 
 	if err := sv.Run(); err != nil {
-		var ee *supervises.ExitError
+		var e *supervises.ExitError
 
-		if !errors.As(err, &ee) {
+		if !errors.As(err, &e) {
 			t.Errorf("%v", err)
 			return
 		}
 
-		if ee != nil {
-			switch ee.ExitCode {
+		if e != nil {
+			switch e.ExitCode {
 			case 0:
 			default:
-				t.Errorf("unexpected exit status: %d: %s", ee.ExitCode, ee.Error())
+				t.Errorf("unexpected exit status: %d: %s", e.ExitCode, e.Error())
 				return
 			}
 		}
@@ -87,7 +87,7 @@ type restartState struct {
 	count int
 }
 
-func (r *restartState) restart(c *supervises.Cmd, ee *supervises.ExitError) *supervises.ExitError {
+func (r *restartState) restart(c *supervises.Cmd, e *supervises.ExitError) *supervises.ExitError {
 	if r.count > 0 {
 		return &supervises.ExitError{
 			Err:      ErrOnExitAttemptsExceeded,
@@ -111,12 +111,12 @@ func TestSupervisor_Run_restart(t *testing.T) {
 	sv := supervises.New(context.Background(), cmds, supervises.WithOnExit(r.restart))
 
 	if err := sv.Run(); err != nil {
-		var ee *supervises.ExitError
-		if !errors.As(err, &ee) {
+		var e *supervises.ExitError
+		if !errors.As(err, &e) {
 			t.Errorf("%v", err)
 			return
 		}
-		if !errors.Is(ee.Err, ErrOnExitAttemptsExceeded) {
+		if !errors.Is(e.Err, ErrOnExitAttemptsExceeded) {
 			t.Errorf("%v", err)
 			return
 		}
@@ -183,15 +183,15 @@ func TestSupervisor_Run_stdin(t *testing.T) {
 	}
 
 	if err := sv.Run(); err != nil {
-		var ee *supervises.ExitError
+		var e *supervises.ExitError
 
-		if !errors.As(err, &ee) {
+		if !errors.As(err, &e) {
 			t.Errorf("%v", err)
 			return
 		}
 
-		if ee.ExitCode != 0 {
-			t.Errorf("unexpected exit status: %d: %s", ee.ExitCode, ee.Error())
+		if e.ExitCode != 0 {
+			t.Errorf("unexpected exit status: %d: %s", e.ExitCode, e.Error())
 			return
 		}
 	}
