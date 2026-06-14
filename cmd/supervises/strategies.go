@@ -1,0 +1,174 @@
+package main
+
+import (
+	"log/slog"
+	"os"
+	"os/exec"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"go.iscode.ca/supervises/pkg/supervises"
+)
+
+type commandState struct {
+	mu     sync.Mutex
+	count  atomic.Int32
+	ticker *time.Ticker
+	pid    int
+	killed bool
+}
+
+type StrategyManager struct {
+	strategy      string
+	cmds          []*supervises.Cmd
+	states        map[*supervises.Cmd]*commandState
+	restartCount  int
+	restartPeriod time.Duration
+	restartWait   time.Duration
+	errExit       bool
+	signal        syscall.Signal
+	logger        *slog.Logger
+}
+
+func (m *StrategyManager) OnStart(c *supervises.Cmd, pid int) {
+	cs := m.states[c]
+	cs.mu.Lock()
+	cs.pid = pid
+	cs.mu.Unlock()
+}
+
+func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *supervises.ExitError {
+	cs := m.states[c]
+
+	cs.mu.Lock()
+	wasKilled := cs.killed
+	cs.killed = false
+	cs.pid = 0
+	cs.mu.Unlock()
+
+	if e != nil {
+		m.logger.Debug("command exited", "argv", e.String(), "status", e.ExitCode, "error", e.Err)
+	}
+
+	// Handle Erlang supervisor strategies and other restart policies
+	switch m.strategy {
+	case "one-for-all", "one_for_all":
+		if e == nil {
+			// Success: transient process behavior (don't restart, exit supervisor)
+			return &supervises.ExitError{
+				Cmd: &exec.Cmd{
+					Path: c.String(),
+				},
+			}
+		}
+
+		if !wasKilled {
+			// This was a real crash, terminate all other processes
+			m.terminateAllOthers(c)
+		}
+
+	case "rest-for-one", "rest_for_one":
+		if e == nil {
+			// Success: transient process behavior (don't restart, exit supervisor)
+			return &supervises.ExitError{
+				Cmd: &exec.Cmd{
+					Path: c.String(),
+				},
+			}
+		}
+
+		if !wasKilled {
+			// This was a real crash, terminate all processes started after this one
+			m.terminateAllAfter(c)
+		}
+
+	case "on-error":
+		if e == nil {
+			return &supervises.ExitError{
+				Cmd: &exec.Cmd{
+					Path: c.String(),
+				},
+			}
+		}
+
+	case "on-success":
+		if e != nil {
+			return e
+		}
+	}
+
+	// Apply restart limits
+	if m.restartCount > 0 {
+		if cs.ticker != nil {
+			select {
+			case <-cs.ticker.C:
+				cs.count.Store(int32(m.restartCount))
+			default:
+			}
+		}
+
+		if m.errExit {
+			if e != nil {
+				cs.count.Add(-1)
+			}
+		} else {
+			cs.count.Add(-1)
+		}
+
+		if cs.count.Load() <= 0 {
+			if e != nil {
+				return e
+			}
+			return &supervises.ExitError{
+				Cmd: &exec.Cmd{
+					Path: c.String(),
+				},
+			}
+		}
+	}
+
+	time.Sleep(m.restartWait)
+	return nil
+}
+
+func (m *StrategyManager) terminateAllOthers(c *supervises.Cmd) {
+	for _, cmd := range m.cmds {
+		if cmd == c {
+			continue
+		}
+		m.terminate(cmd)
+	}
+}
+
+func (m *StrategyManager) terminateAllAfter(c *supervises.Cmd) {
+	found := false
+	for _, cmd := range m.cmds {
+		if cmd == c {
+			found = true
+			continue
+		}
+		if found {
+			m.terminate(cmd)
+		}
+	}
+}
+
+func (m *StrategyManager) terminate(c *supervises.Cmd) {
+	cs := m.states[c]
+	cs.mu.Lock()
+	pid := cs.pid
+	if pid > 0 {
+		cs.killed = true
+	}
+	cs.mu.Unlock()
+
+	if pid > 0 {
+		m.logger.Debug("terminating process for strategy", "path", c.Path, "pid", pid)
+		p, err := os.FindProcess(pid)
+		if err == nil {
+			_ = p.Signal(m.signal)
+		}
+	}
+}

@@ -176,3 +176,105 @@ func TestStrategyOnSuccess_Failure(t *testing.T) {
 		t.Errorf("expected command to run 1 time (stopped on failure), ran %d times. stdout: %s", count, output)
 	}
 }
+
+func TestStrategyOneForAll_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1 writes, sleeps
+	// cmd2 writes, sleeps, exits 1
+	// We use -restart-count 2 so it runs twice.
+	cmd := exec.Command(binaryPath,
+		"-strategy", "one-for-all",
+		"-restart-count", "2",
+		"-restart-wait", "10ms",
+		"@echo cmd1 >> "+logFile+"; sleep 10",
+		"@sleep 0.1; echo cmd2 >> "+logFile+"; exit 1",
+	)
+
+	_ = cmd.Run() // Expect exit error since cmd2 exits 1
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	count1 := strings.Count(content, "cmd1")
+	count2 := strings.Count(content, "cmd2")
+
+	if count1 != 2 {
+		t.Errorf("expected cmd1 to run 2 times, got %d. Log content:\n%s", count1, content)
+	}
+	if count2 != 2 {
+		t.Errorf("expected cmd2 to run 2 times, got %d. Log content:\n%s", count2, content)
+	}
+}
+
+func TestStrategyOneForAll_Success(t *testing.T) {
+	// If one-for-all strategy processes succeed (exit 0), the supervisor stops (transient behavior).
+	cmd := exec.Command(binaryPath,
+		"-strategy", "one-for-all",
+		"-restart-count", "3",
+		"-restart-wait", "10ms",
+		"@echo success1",
+		"@sleep 0.1; echo success2",
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("supervises failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	count1 := strings.Count(output, "success1")
+	count2 := strings.Count(output, "success2")
+
+	// They should each run at most once because success stops the supervisor.
+	if count1 > 1 || count2 > 1 {
+		t.Errorf("expected commands to run at most once, got success1: %d, success2: %d. stdout: %s", count1, count2, output)
+	}
+}
+
+func TestStrategyRestForOne_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1: started first
+	// cmd2: started second, exits 1
+	// cmd3: started third
+	cmd := exec.Command(binaryPath,
+		"-strategy", "rest-for-one",
+		"-restart-count", "2",
+		"-restart-wait", "10ms",
+		"@echo cmd1 >> "+logFile+"; sleep 10",
+		"@sleep 0.1; echo cmd2 >> "+logFile+"; exit 1",
+		"@echo cmd3 >> "+logFile+"; sleep 10",
+	)
+
+	_ = cmd.Run()
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	count1 := strings.Count(content, "cmd1")
+	count2 := strings.Count(content, "cmd2")
+	count3 := strings.Count(content, "cmd3")
+
+	if count1 != 1 {
+		t.Errorf("expected cmd1 to run 1 time (not terminated), got %d. Log content:\n%s", count1, content)
+	}
+	if count2 != 2 {
+		t.Errorf("expected cmd2 to run 2 times, got %d. Log content:\n%s", count2, content)
+	}
+	if count3 != 2 {
+		t.Errorf("expected cmd3 to run 2 times (terminated and restarted), got %d. Log content:\n%s", count3, content)
+	}
+}
+

@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"path"
 	"slices"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -71,7 +70,7 @@ func main() {
 	restartCount := flag.Int("restart-count", 0, "restart limit before exiting (0: no limit)")
 	restartPeriod := flag.Duration("restart-period", 0, "time interval for restarts (0: no limit)")
 	errExit := flag.Bool("errexit", false, "restarts apply to tasks exiting with a non-0 status")
-	strategy := flag.String("strategy", "always", "restart strategy (always, on-error, on-success)")
+	strategy := flag.String("strategy", "always", "restart strategy (always, on-error, on-success, one-for-all, rest-for-one)")
 
 	flag.Usage = func() { usage() }
 	flag.Parse()
@@ -86,9 +85,9 @@ func main() {
 	}
 
 	switch *strategy {
-	case "always", "on-error", "on-success":
+	case "always", "on-error", "on-success", "one-for-all", "one_for_all", "rest-for-one", "rest_for_one":
 	default:
-		fmt.Fprintf(os.Stderr, "invalid strategy: %s (must be one of: always, on-error, on-success)\n", *strategy)
+		fmt.Fprintf(os.Stderr, "invalid strategy: %s (must be one of: always, on-error, on-success, one-for-all, rest-for-one)\n", *strategy)
 		usage()
 		os.Exit(2)
 	}
@@ -97,11 +96,6 @@ func main() {
 	if err != nil {
 		l.Info("parse error", "error", err)
 		os.Exit(2)
-	}
-
-	type commandState struct {
-		count  atomic.Int32
-		ticker *time.Ticker
 	}
 
 	cancelFunc := func(cmd *exec.Cmd) error { return cmd.Process.Signal(syscall.Signal(*sig)) }
@@ -121,59 +115,16 @@ func main() {
 		states[cmd] = cs
 	}
 
-	restart := func(c *supervises.Cmd, e *supervises.ExitError) *supervises.ExitError {
-		cs := states[c]
-
-		if e != nil {
-			l.Debug("command exited", "argv", e.String(), "status", e.ExitCode, "error", e.Err)
-		}
-
-		switch *strategy {
-		case "on-error":
-			if e == nil {
-				return &supervises.ExitError{
-					Cmd: &exec.Cmd{
-						Path: c.String(),
-					},
-				}
-			}
-		case "on-success":
-			if e != nil {
-				return e
-			}
-		}
-
-		if *restartCount > 0 {
-			if cs.ticker != nil {
-				select {
-				case <-cs.ticker.C:
-					cs.count.Store(int32(*restartCount))
-				default:
-				}
-			}
-
-			if *errExit {
-				if e != nil {
-					cs.count.Add(-1)
-				}
-			} else {
-				cs.count.Add(-1)
-			}
-
-			if cs.count.Load() <= 0 {
-				if e != nil {
-					return e
-				}
-				return &supervises.ExitError{
-					Cmd: &exec.Cmd{
-						Path: c.String(),
-					},
-				}
-			}
-		}
-
-		time.Sleep(*restartWait)
-		return nil
+	mgr := &StrategyManager{
+		strategy:      *strategy,
+		cmds:          cmds,
+		states:        states,
+		restartCount:  *restartCount,
+		restartPeriod: *restartPeriod,
+		restartWait:   *restartWait,
+		errExit:       *errExit,
+		signal:        syscall.Signal(*sig),
+		logger:        l,
 	}
 
 	var e *supervises.ExitError
@@ -181,7 +132,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sv := supervises.New(ctx, cmds,
-		supervises.WithOnExit(restart),
+		supervises.WithOnExit(mgr.OnExit),
+		supervises.WithOnStart(mgr.OnStart),
 	)
 
 	supervises.ForwardSignals(ctx, sv, slices.DeleteFunc(supervises.DefaultSignals, func(sig os.Signal) bool { return sig == syscall.SIGINT })...)
