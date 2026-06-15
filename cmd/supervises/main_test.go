@@ -278,3 +278,63 @@ func TestStrategyRestForOne_Failure(t *testing.T) {
 	}
 }
 
+func TestStrategyOneForAll_Success_KeepsOthers(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1 exits 0 immediately
+	// cmd2 runs for 0.2s then writes to file and exits 0
+	cmd := exec.Command(binaryPath,
+		"-strategy", "one-for-all",
+		"-restart-wait", "10ms",
+		"@echo cmd1 >> "+logFile,
+		"@sleep 0.2; echo cmd2 >> "+logFile,
+	)
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("supervises failed: %v", err)
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "cmd1") || !strings.Contains(content, "cmd2") {
+		t.Errorf("expected both cmd1 and cmd2 to run to completion, got log content:\n%s", content)
+	}
+}
+
+func TestStrategyOnError_Success_KeepsOthers(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1 exits 0 immediately
+	// cmd2 runs for 0.2s then writes to file and exits 0
+	cmd := exec.Command(binaryPath,
+		"-strategy", "on-error",
+		"-restart-wait", "10ms",
+		"@echo cmd1 >> "+logFile,
+		"@sleep 0.2; echo cmd2 >> "+logFile,
+	)
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("supervises failed: %v", err)
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "cmd1") || !strings.Contains(content, "cmd2") {
+		t.Errorf("expected both cmd1 and cmd2 to run to completion under on-error, got log content:\n%s", content)
+	}
+}
+
+
+

@@ -84,7 +84,12 @@ errexit
 : restarts apply to tasks exiting with a non-0 status
 
 strategy *string*
-: restart strategy: always, on-error, on-success (default always)
+: restart strategy (default: always):
+  * **always**: restart the process regardless of its exit status.
+  * **on-error**: restart the process only if it exits with a non-zero status. If a process exits with status 0, it is not restarted, but other processes remain running.
+  * **on-success**: restart the process only if it exits with a zero status. If a process exits with a non-zero status, it is not restarted, but other processes remain running.
+  * **one-for-all** (or `one_for_all`): if a process crashes (exits non-zero), all other processes are terminated and restarted. If a process exits with status 0, it is not restarted, but other processes remain running (transient behavior).
+  * **rest-for-one** (or `rest_for_one`): if a process crashes (exits non-zero), all processes started after it (in command-line order) are terminated and restarted. If a process exits with status 0, it is not restarted, but other processes remain running (transient behavior).
 
 restart-count int
 : restart limit before exiting (0: no limit)

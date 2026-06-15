@@ -168,4 +168,9 @@ func main() {
 		l.Debug("command exited", "argv", e.String(), "status", e.ExitCode, "error", e.Err)
 		os.Exit(e.ExitCode)
 	}
+
+	if exitErr := mgr.FirstFailedError(); exitErr != nil {
+		l.Debug("command exited", "argv", exitErr.String(), "status", exitErr.ExitCode, "error", exitErr.Err)
+		os.Exit(exitErr.ExitCode)
+	}
 }

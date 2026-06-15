@@ -21,6 +21,7 @@ import (
 
 var (
 	ErrNoCommand = errors.New("no command provided")
+	ErrStop      = errors.New("stop supervising process")
 )
 
 type Config struct {
@@ -347,6 +348,9 @@ func (sv *Supervisor) Run() error {
 				}
 
 				if rerr := sv.cfg.onExit(v, err); rerr != nil {
+					if errors.Is(rerr, ErrStop) {
+						return nil
+					}
 					return rerr
 				}
 			}
@@ -375,6 +379,13 @@ func (e *ExitError) Error() string {
 		return fmt.Sprintf("Exited with status %d", e.ExitCode)
 	}
 	return fmt.Sprintf("Exited with status %d: %s", e.ExitCode, e.Err.Error())
+}
+
+func (e *ExitError) Is(target error) bool {
+	if e == nil {
+		return false
+	}
+	return errors.Is(e.Err, target)
 }
 
 func (e *ExitError) String() string {

@@ -30,6 +30,26 @@ type StrategyManager struct {
 	errExit       bool
 	signal        syscall.Signal
 	logger        *slog.Logger
+
+	muLock      sync.Mutex
+	firstFailed *supervises.ExitError
+}
+
+func (m *StrategyManager) saveFailedError(e *supervises.ExitError) {
+	if e == nil {
+		return
+	}
+	m.muLock.Lock()
+	defer m.muLock.Unlock()
+	if m.firstFailed == nil {
+		m.firstFailed = e
+	}
+}
+
+func (m *StrategyManager) FirstFailedError() *supervises.ExitError {
+	m.muLock.Lock()
+	defer m.muLock.Unlock()
+	return m.firstFailed
 }
 
 func (m *StrategyManager) OnStart(c *supervises.Cmd, pid int) {
@@ -56,11 +76,9 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 	switch m.strategy {
 	case "one-for-all", "one_for_all":
 		if e == nil {
-			// Success: transient process behavior (don't restart, exit supervisor)
+			// Success: transient process behavior (don't restart, keep other processes running)
 			return &supervises.ExitError{
-				Cmd: &exec.Cmd{
-					Path: c.String(),
-				},
+				Err: supervises.ErrStop,
 			}
 		}
 
@@ -71,11 +89,9 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 
 	case "rest-for-one", "rest_for_one":
 		if e == nil {
-			// Success: transient process behavior (don't restart, exit supervisor)
+			// Success: transient process behavior (don't restart, keep other processes running)
 			return &supervises.ExitError{
-				Cmd: &exec.Cmd{
-					Path: c.String(),
-				},
+				Err: supervises.ErrStop,
 			}
 		}
 
@@ -86,16 +102,19 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 
 	case "on-error":
 		if e == nil {
+			// Success: don't restart, but let other processes run
 			return &supervises.ExitError{
-				Cmd: &exec.Cmd{
-					Path: c.String(),
-				},
+				Err: supervises.ErrStop,
 			}
 		}
 
 	case "on-success":
 		if e != nil {
-			return e
+			// Failure: don't restart, but let other processes run
+			m.saveFailedError(e)
+			return &supervises.ExitError{
+				Err: supervises.ErrStop,
+			}
 		}
 	}
 
