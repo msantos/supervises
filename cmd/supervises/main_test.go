@@ -336,5 +336,78 @@ func TestStrategyOnError_Success_KeepsOthers(t *testing.T) {
 	}
 }
 
+func TestStrategyOneForAllAlways_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1 sleeps for 0.1s, writes, and exits 0 (not a crash)
+	// cmd2 writes immediately, and sleeps
+	// We use -restart-count 2 so it runs twice.
+	cmd := exec.Command(binaryPath,
+		"-strategy", "one-for-all-always",
+		"-restart-count", "2",
+		"-restart-wait", "10ms",
+		"@sleep 0.1; echo cmd1 >> "+logFile,
+		"@echo cmd2 >> "+logFile+"; sleep 10",
+	)
+
+	_ = cmd.Run()
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	count1 := strings.Count(content, "cmd1")
+	count2 := strings.Count(content, "cmd2")
+
+	if count1 != 2 {
+		t.Errorf("expected cmd1 to run 2 times, got %d. Log content:\n%s", count1, content)
+	}
+	if count2 != 2 {
+		t.Errorf("expected cmd2 to run 2 times, got %d. Log content:\n%s", count2, content)
+	}
+}
+
+func TestStrategyRestForOneAlways_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1: started first, sleeps 0.1s, writes, exits 0
+	// cmd2: started second, writes immediately, sleeps
+	// cmd3: started third, writes immediately, sleeps
+	cmd := exec.Command(binaryPath,
+		"-strategy", "rest-for-one-always",
+		"-restart-count", "2",
+		"-restart-wait", "10ms",
+		"@sleep 0.1; echo cmd1 >> "+logFile,
+		"@echo cmd2 >> "+logFile+"; sleep 10",
+		"@echo cmd3 >> "+logFile+"; sleep 10",
+	)
+
+	_ = cmd.Run()
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	count1 := strings.Count(content, "cmd1")
+	count2 := strings.Count(content, "cmd2")
+	count3 := strings.Count(content, "cmd3")
+
+	if count1 != 2 {
+		t.Errorf("expected cmd1 to run 2 times, got %d. Log content:\n%s", count1, content)
+	}
+	if count2 != 2 {
+		t.Errorf("expected cmd2 to run 2 times (terminated and restarted), got %d. Log content:\n%s", count2, content)
+	}
+	if count3 != 2 {
+		t.Errorf("expected cmd3 to run 2 times (terminated and restarted), got %d. Log content:\n%s", count3, content)
+	}
+}
+
 
 

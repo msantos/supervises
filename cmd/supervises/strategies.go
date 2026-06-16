@@ -87,6 +87,12 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 			m.terminateAllOthers(c)
 		}
 
+	case "one-for-all-always", "one_for_all_always":
+		if !wasKilled {
+			// This was a normal exit or crash, terminate all other processes
+			m.terminateAllOthers(c)
+		}
+
 	case "rest-for-one", "rest_for_one":
 		if e == nil {
 			// Success: transient process behavior (don't restart, keep other processes running)
@@ -97,6 +103,12 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 
 		if !wasKilled {
 			// This was a real crash, terminate all processes started after this one
+			m.terminateAllAfter(c)
+		}
+
+	case "rest-for-one-always", "rest_for_one_always":
+		if !wasKilled {
+			// This was a normal exit or crash, terminate all processes started after this one
 			m.terminateAllAfter(c)
 		}
 
