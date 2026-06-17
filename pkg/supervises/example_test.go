@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -96,6 +97,61 @@ func ExampleSupervisor_Run_onStart() {
 	}))
 
 	supervises.ForwardSignals(ctx, sv, supervises.DefaultSignals...)
+
+	if err = sv.Run(); err != nil {
+		var e *supervises.ExitError
+
+		if !errors.As(err, &e) {
+			fmt.Fprintln(os.Stderr, err.Error())
+			return
+		}
+	}
+
+	// Output: test123
+}
+
+func ExampleSupervisor_Run_custom_signal_handling() {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	cmds, err := supervises.Parse("@echo test123; exec sleep 10", "cat")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+
+	sv := supervises.New(ctx, cmds)
+
+	// Custom signal handler:
+	// - 1st ctrl-C (SIGINT): ignored
+	// - 2nd ctrl-C (SIGINT): sends SIGINT to supervised processes
+	// - 3rd ctrl-C (SIGINT): sends SIGKILL to supervised processes
+	sigch := make(chan os.Signal, 1)
+	signal.Notify(sigch, unix.SIGINT)
+
+	go func() {
+		defer signal.Stop(sigch)
+		count := 0
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-sigch:
+				count++
+				switch count {
+				case 1:
+					// 1st ctrl-C: ignored
+				case 2:
+					// 2nd ctrl-C: sends SIGINT to supervised processes
+					sv.SignalAll(unix.SIGINT)
+				case 3:
+					// 3rd ctrl-C: sends SIGKILL to supervised processes
+					sv.SignalAll(unix.SIGKILL)
+					return
+				}
+			}
+		}
+	}()
 
 	if err = sv.Run(); err != nil {
 		var e *supervises.ExitError
