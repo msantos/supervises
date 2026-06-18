@@ -38,7 +38,7 @@ func ExampleSupervisor_Run() {
 	// Output: test123
 }
 
-func ExampleSupervisor_Run_signal_handling() {
+func ExampleSupervisor_Run_signal_handler() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -110,7 +110,7 @@ func ExampleSupervisor_Run_onStart() {
 	// Output: test123
 }
 
-func ExampleSupervisor_Run_custom_signal_handling() {
+func ExampleSupervisor_Run_custom_signal_handler() {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
