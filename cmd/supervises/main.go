@@ -1,3 +1,53 @@
+// The supervises utility is a command-line tool designed to run and monitor
+// multiple subprocesses simultaneously. It supports signal forwarding,
+// standard input broadcasting to all active child processes, and configurable
+// Erlang-like supervisor restart strategies.
+//
+// # Sigils
+//
+// Subprocess commands are specified as command-line arguments. They can be prefixed
+// with sigils to control how standard streams are handled:
+//
+//   - @: Executes the command in a shell (/bin/sh -c).
+//     Example: supervises @'nc -l 8080 > nc.log'
+//
+//   - =: Discards standard input, standard output, and standard error.
+//     Example: supervises ='nc -l 8080'
+//
+//   - =0: Discards standard input only.
+//     Example: supervises =0'nc -l 8080'
+//
+//   - =1: Discards standard output only.
+//     Example: supervises =1'nc -l 8080'
+//
+//   - =2: Discards standard error only.
+//     Example: supervises =2'nc -l 8080'
+//
+//   - =3: Discards both standard output and standard error.
+//     Example: supervises =3'nc -l 8080'
+//
+// # Restart Strategies
+//
+// The command-line supervisor supports various restart strategies configured via
+// the -strategy flag:
+//
+//   - always: Restarts a command regardless of its exit status.
+//
+//   - on-error: Restarts a command only if it exits with a non-zero status.
+//
+//   - on-success: Restarts a command only if it exits with a zero status.
+//
+//   - one-for-all: If any supervised command fails, all other commands are
+//     terminated, and they are not restarted unless configured otherwise.
+//
+//   - one-for-all-always: If any supervised command exits (successfully or with error),
+//     all other commands are terminated.
+//
+//   - rest-for-one: If a supervised command fails, any commands started after it
+//     (in the order defined on the command line) are terminated.
+//
+//   - rest-for-one-always: If a supervised command exits, any commands started
+//     after it are terminated.
 package main
 
 import (

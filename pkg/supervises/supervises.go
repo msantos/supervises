@@ -1,3 +1,7 @@
+// Package supervises provides a process supervisor that manages, monitors,
+// and restarts multiple external commands. It coordinates signal forwarding,
+// distributes standard input to all running processes, and triggers callbacks
+// on process start and exit events.
 package supervises
 
 import (
@@ -20,8 +24,12 @@ import (
 )
 
 var (
+	// ErrNoCommand is returned when a parsed command string contains no command.
 	ErrNoCommand = errors.New("no command provided")
-	ErrStop      = errors.New("stop supervising process")
+	// ErrStop is returned from an OnExit callback to indicate that a supervised
+	// command should not be restarted, and the supervisor should stop monitoring it
+	// without reporting an error.
+	ErrStop = errors.New("stop supervising process")
 )
 
 type Config struct {
@@ -30,8 +38,12 @@ type Config struct {
 	stdin   io.ReadCloser
 }
 
+// Option defines a configuration option for a Supervisor.
 type Option func(*Config)
 
+// Supervisor manages, monitors, and restarts a list of supervised commands.
+// It coordinates signal forwarding, distributes standard input to all processes,
+// and executes lifecycle callbacks.
 type Supervisor struct {
 	ctx  context.Context
 	cfg  *Config
@@ -42,8 +54,8 @@ type Supervisor struct {
 	eof    atomic.Bool
 }
 
-// WithOnStart sets a callback function executed every time a command
-// successfully starts, providing the original configuration and the active PID.
+// WithOnStart returns an Option that sets a callback function executed every time
+// a supervised command successfully starts, receiving the Cmd representation and the active PID.
 func WithOnStart(f func(cmd *Cmd, pid int)) Option {
 	return func(c *Config) {
 		if f != nil {
@@ -52,8 +64,8 @@ func WithOnStart(f func(cmd *Cmd, pid int)) Option {
 	}
 }
 
-// WithOnExit sets the function called when the supervised process
-// exits. The supervised process is restarted if the function returns nil.
+// WithOnExit returns an Option that sets the function called when a supervised
+// process exits. The supervised process is restarted if the callback returns nil.
 func WithOnExit(onExit func(*Cmd, *ExitError) *ExitError) Option {
 	return func(o *Config) {
 		if onExit != nil {
@@ -62,14 +74,15 @@ func WithOnExit(onExit func(*Cmd, *ExitError) *ExitError) Option {
 	}
 }
 
-// WithStdin sets the source for standard input.
+// WithStdin returns an Option that sets the source reader for standard input
+// forwarded to all supervised commands.
 func WithStdin(r io.ReadCloser) Option {
 	return func(o *Config) {
 		o.stdin = r
 	}
 }
 
-// New returns configuration for supervisors.
+// New creates and configures a new Supervisor with the given context, commands, and options.
 func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 	cfg := &Config{
 		onStart: func(_ *Cmd, _ int) {},
@@ -99,12 +112,21 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 	}
 }
 
+// Cmd represents a command to be executed and supervised. It embeds exec.Cmd
+// and provides additional control fields for handling stdin and cancellation.
 type Cmd struct {
 	exec.Cmd
-	EOF    bool
+
+	// EOF indicates whether the supervisor should close stdin for this command
+	// immediately after it starts, rather than forwarding broadcasted stdin.
+	EOF bool
+
+	// Cancel is a custom function used to terminate the command when the supervisor's
+	// context is canceled. By default, it sends SIGKILL.
 	Cancel func(*exec.Cmd) error
 }
 
+// String returns a space-separated string containing the command path and its arguments.
 func (c *Cmd) String() string {
 	b := new(strings.Builder)
 	b.WriteString(c.Path)
@@ -304,7 +326,9 @@ var DefaultSignals = []os.Signal{
 	syscall.SIGUSR2,
 }
 
-// Run runs, monitors and onExits a list of commands.
+// Run starts, monitors, and handles the lifecycle of all supervised commands.
+// It blocks until the supervisor context is canceled or a non-nil error is
+// returned from an OnExit callback.
 func (sv *Supervisor) Run() error {
 	defer func() {
 		_ = sv.bsig.Close()
@@ -365,12 +389,18 @@ func (sv *Supervisor) SignalAll(sig os.Signal) {
 	sv.bsig.Submit(sig)
 }
 
+// ExitError wraps a process exit status or execution error, along with
+// the corresponding command.
 type ExitError struct {
-	Err      error
-	Cmd      *exec.Cmd
+	// Err is the underlying error returned during process start, wait, or execution.
+	Err error
+	// Cmd is the command execution representation.
+	Cmd *exec.Cmd
+	// ExitCode is the exit status code of the command.
 	ExitCode int
 }
 
+// Error returns a formatted error message describing the exit status and any underlying error.
 func (e *ExitError) Error() string {
 	if e == nil {
 		return "Exited successfully"
@@ -381,6 +411,7 @@ func (e *ExitError) Error() string {
 	return fmt.Sprintf("Exited with status %d: %s", e.ExitCode, e.Err.Error())
 }
 
+// Is reports whether the underlying error wraps or matches the target error.
 func (e *ExitError) Is(target error) bool {
 	if e == nil {
 		return false
@@ -388,6 +419,7 @@ func (e *ExitError) Is(target error) bool {
 	return errors.Is(e.Err, target)
 }
 
+// String returns a string representation of the executed command.
 func (e *ExitError) String() string {
 	// Fixed by https://github.com/golang/go/commit/33241d7298e0c621cfc4cc9f878dba9eff2b1c3d
 	if len(e.Cmd.Args) == 0 {
