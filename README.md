@@ -101,3 +101,60 @@ restart-period duration
 
 restart-wait duration
 : restart backoff interval (default 1s)
+
+# LIBRARY USAGE
+
+`supervises` can be used as a Go library to programmatically manage and monitor multiple subprocesses:
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"time"
+
+	"go.iscode.ca/supervises/pkg/supervises"
+)
+
+func main() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Parse command strings (supporting sigil prefixes)
+	cmds, err := supervises.Parse("@echo 'starting supervises...';", "sleep 10")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Parse error: %v\n", err)
+		return
+	}
+
+	// Create a new supervisor with options
+	sv := supervises.New(ctx, cmds,
+		supervises.WithOnStart(func(cmd *supervises.Cmd, pid int) {
+			fmt.Printf("Command %s started with PID %d\n", cmd.Path, pid)
+		}),
+		supervises.WithOnExit(func(cmd *supervises.Cmd, err *supervises.ExitError) *supervises.ExitError {
+			if err != nil {
+				fmt.Printf("Command %s exited with error: %v\n", cmd.Path, err)
+				return err // Return err to propagate and stop monitoring
+			}
+			return nil // Returning nil restarts the process (default 1s sleep)
+		}),
+	)
+
+	// Intercept and forward standard OS signals to all supervised processes
+	supervises.ForwardSignals(ctx, sv, supervises.DefaultSignals...)
+
+	// Run starts, monitors, and blocks until context cancellation or fatal exit
+	if err := sv.Run(); err != nil {
+		var e *supervises.ExitError
+		if errors.As(err, &e) {
+			fmt.Fprintf(os.Stderr, "Process exited with code %d\n", e.ExitCode)
+		} else {
+			fmt.Fprintf(os.Stderr, "Supervisor failed: %v\n", err)
+		}
+	}
+}
+```
