@@ -192,19 +192,22 @@ func main() {
 	signal.Notify(sigintCh, syscall.SIGINT)
 
 	go func() {
-		count := 0
+		var lastCtrlC time.Time
+		cooldown := 1 * time.Second
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-sigintCh:
-				if count > 0 {
+				now := time.Now()
+				if !lastCtrlC.IsZero() && now.Sub(lastCtrlC) < cooldown {
+					l.Info("Interrupt received again within cooldown, terminating supervisor...")
 					cancel()
 					return
 				}
-
+				lastCtrlC = now
+				l.Info("Interrupt received, forwarding SIGINT to supervised processes. Repeat within 1s to terminate supervisor.")
 				sv.SignalAll(syscall.SIGINT)
-				count++
 			}
 		}
 	}()
