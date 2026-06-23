@@ -102,6 +102,22 @@ restart-period duration
 restart-wait duration
 : restart backoff interval (default 1s)
 
+# SIGNAL HANDLING (CTRL-C)
+
+`supervises` intercepts standard OS signals (such as `SIGHUP`, `SIGQUIT`, `SIGTERM`, etc.) and forwards them to all running subprocesses.
+
+Keyboard interrupts (`Ctrl-C` / `SIGINT`) receive special handling:
+- **First Ctrl-C**: The supervisor intercepts the `SIGINT` and forwards it to all supervised subprocesses, allowing them to clean up or shut down gracefully. The supervisor continues running.
+- **Second Ctrl-C**: If sent within 1 second of the first, the supervisor forces immediate termination of all subprocesses (sending the signal specified by `-signal`, which defaults to `SIGKILL` / `9`) and exits.
+
+# STANDARD INPUT (STDIN)
+
+By default, standard input sent to the supervisor is broadcast (replicated) to the standard input of all supervised subprocesses.
+
+When standard input is closed or reaches EOF (e.g. via `Ctrl-D`):
+- The supervisor closes the stdin pipe for all supervised subprocesses.
+- The subprocesses themselves are not terminated; they continue running until they exit or the supervisor is stopped.
+
 # LIBRARY USAGE
 
 `supervises` can be used as a Go library to programmatically manage and monitor multiple subprocesses:

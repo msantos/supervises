@@ -48,6 +48,29 @@
 //
 //   - rest-for-one-always: If a supervised command exits, any commands started
 //     after it are terminated.
+//
+// # Signal Handling (Ctrl-C)
+//
+// The supervisor intercepts standard signals (such as SIGHUP, SIGQUIT, SIGTERM, etc.)
+// and forwards them to all running subprocesses.
+//
+// Keyboard interrupts (Ctrl-C / SIGINT) receive special handling:
+//   - First Ctrl-C: The supervisor intercepts the SIGINT and forwards it to all
+//     supervised subprocesses, allowing them to perform cleanups or shut down gracefully.
+//     The supervisor remains running.
+//   - Second Ctrl-C: If sent within 1 second of the first, the supervisor forces immediate
+//     termination of all subprocesses (sending the signal specified by the -signal flag,
+//     which defaults to SIGKILL) and exits.
+//
+// # Standard Input (Stdin)
+//
+// By default, standard input sent to the supervisor is broadcast (replicated) to
+// the standard input of all supervised subprocesses.
+//
+// When standard input is closed or reaches EOF (e.g. via Ctrl-D):
+//   - The supervisor closes the stdin pipe for all supervised subprocesses.
+//   - Subprocesses are not terminated; they continue running until they exit or the
+//     supervisor is stopped.
 package main
 
 import (
