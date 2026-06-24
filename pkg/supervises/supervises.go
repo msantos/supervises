@@ -92,7 +92,11 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 			}
 
 			// Restart the process.
-			time.Sleep(time.Second)
+			select {
+			case <-ctx.Done():
+				return &ExitError{Err: ctx.Err()}
+			case <-time.After(time.Second):
+			}
 			return nil
 		},
 		stdin: os.Stdin,

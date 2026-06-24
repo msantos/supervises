@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ type commandState struct {
 }
 
 type StrategyManager struct {
+	ctx           context.Context
 	strategy      string
 	cmds          []*supervises.Cmd
 	states        map[*supervises.Cmd]*commandState
@@ -160,7 +162,19 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 		}
 	}
 
-	time.Sleep(m.restartWait)
+	if m.ctx != nil {
+		t := time.NewTimer(m.restartWait)
+		defer t.Stop()
+		select {
+		case <-m.ctx.Done():
+			return &supervises.ExitError{
+				Err: m.ctx.Err(),
+			}
+		case <-t.C:
+		}
+	} else {
+		time.Sleep(m.restartWait)
+	}
 	return nil
 }
 

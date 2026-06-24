@@ -188,7 +188,10 @@ func main() {
 		states[cmd] = cs
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	mgr := &StrategyManager{
+		ctx:           ctx,
 		strategy:      *strategy,
 		cmds:          cmds,
 		states:        states,
@@ -201,8 +204,6 @@ func main() {
 	}
 
 	var e *supervises.ExitError
-
-	ctx, cancel := context.WithCancel(context.Background())
 
 	sv := supervises.New(ctx, cmds,
 		supervises.WithOnExit(mgr.OnExit),
