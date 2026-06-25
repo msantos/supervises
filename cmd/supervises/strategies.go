@@ -162,19 +162,22 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 		}
 	}
 
-	if m.ctx != nil {
-		t := time.NewTimer(m.restartWait)
-		defer t.Stop()
-		select {
-		case <-m.ctx.Done():
-			return &supervises.ExitError{
-				Err: m.ctx.Err(),
-			}
-		case <-t.C:
-		}
-	} else {
+	if m.ctx == nil {
 		time.Sleep(m.restartWait)
+		return nil
 	}
+
+	t := time.NewTimer(m.restartWait)
+	defer t.Stop()
+
+	select {
+	case <-m.ctx.Done():
+		return &supervises.ExitError{
+			Err: m.ctx.Err(),
+		}
+	case <-t.C:
+	}
+
 	return nil
 }
 
