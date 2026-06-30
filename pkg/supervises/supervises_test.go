@@ -202,3 +202,46 @@ func TestSupervisor_Run_stdin(t *testing.T) {
 		return
 	}
 }
+
+func TestSupervisor_Run_stdinEOFCallback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmds, err := supervises.Parse("cat")
+	if err != nil {
+		t.Fatalf("invalid command: %v", err)
+	}
+
+	var called bool
+	var mu sync.Mutex
+
+	sv := supervises.New(ctx, cmds,
+		supervises.WithStdin(io.NopCloser(bytes.NewReader([]byte("test\n")))),
+		supervises.WithOnStdinEOF(func() {
+			mu.Lock()
+			called = true
+			mu.Unlock()
+		}),
+		supervises.WithOnExit(
+			func(cmd *supervises.Cmd, _ *supervises.ExitError) *supervises.ExitError {
+				return &supervises.ExitError{
+					Err:      nil,
+					ExitCode: 0,
+				}
+			},
+		),
+	)
+
+	if err := sv.Run(); err != nil {
+		var e *supervises.ExitError
+		if !errors.As(err, &e) || e.ExitCode != 0 {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !called {
+		t.Error("expected onStdinEOF callback to be called")
+	}
+}

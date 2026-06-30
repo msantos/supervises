@@ -33,9 +33,10 @@ var (
 )
 
 type Config struct {
-	onStart func(*Cmd, int)
-	onExit  func(*Cmd, *ExitError) *ExitError
-	stdin   io.ReadCloser
+	onStart    func(*Cmd, int)
+	onExit     func(*Cmd, *ExitError) *ExitError
+	onStdinEOF func()
+	stdin      io.ReadCloser
 }
 
 // Option defines a configuration option for a Supervisor.
@@ -74,6 +75,16 @@ func WithOnExit(onExit func(*Cmd, *ExitError) *ExitError) Option {
 	}
 }
 
+// WithOnStdinEOF returns an Option that sets the callback function executed when
+// standard input is closed or reaches EOF.
+func WithOnStdinEOF(onStdinEOF func()) Option {
+	return func(o *Config) {
+		if onStdinEOF != nil {
+			o.onStdinEOF = onStdinEOF
+		}
+	}
+}
+
 // WithStdin returns an Option that sets the source reader for standard input
 // forwarded to all supervised commands.
 func WithStdin(r io.ReadCloser) Option {
@@ -99,7 +110,8 @@ func New(ctx context.Context, cmds []*Cmd, opts ...Option) *Supervisor {
 			}
 			return nil
 		},
-		stdin: os.Stdin,
+		onStdinEOF: func() {},
+		stdin:      os.Stdin,
 	}
 
 	for _, opt := range opts {
@@ -254,6 +266,9 @@ func (sv *Supervisor) stdinhandler(ctx context.Context) error {
 		_ = sv.cfg.stdin.Close()
 		sv.eof.Store(true)
 		sv.bstdin.Submit(nil)
+		if sv.cfg.onStdinEOF != nil {
+			sv.cfg.onStdinEOF()
+		}
 	}()
 
 	buf := make([]byte, 4096)
