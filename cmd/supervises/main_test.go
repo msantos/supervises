@@ -409,5 +409,83 @@ func TestStrategyRestForOneAlways_Success(t *testing.T) {
 	}
 }
 
+func TestStrategyOneForAllOnce_Success(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1 sleeps for 0.1s, writes, and exits 0 (success)
+	// cmd2 writes immediately, and sleeps
+	cmd := exec.Command(binaryPath,
+		"-strategy", "one-for-all-once",
+		"-restart-wait", "10ms",
+		"@sleep 0.1; echo cmd1 >> "+logFile,
+		"@echo cmd2 >> "+logFile+"; sleep 10",
+	)
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("supervises failed with error: %v", err)
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	count1 := strings.Count(content, "cmd1")
+	count2 := strings.Count(content, "cmd2")
+
+	if count1 != 1 {
+		t.Errorf("expected cmd1 to run 1 time, got %d. Log content:\n%s", count1, content)
+	}
+	if count2 != 1 {
+		t.Errorf("expected cmd2 to run 1 time, got %d. Log content:\n%s", count2, content)
+	}
+}
+
+func TestStrategyOneForAllOnce_Failure(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "log.txt")
+
+	// cmd1 sleeps for 0.1s, writes, and exits 5 (failure)
+	// cmd2 writes immediately, and sleeps
+	cmd := exec.Command(binaryPath,
+		"-strategy", "one-for-all-once",
+		"-restart-wait", "10ms",
+		"@sleep 0.1; echo cmd1 >> "+logFile+"; exit 5",
+		"@echo cmd2 >> "+logFile+"; sleep 10",
+	)
+
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("expected supervises to fail, but it exited with 0")
+	}
+
+	exitErr, ok := err.(*exec.ExitError)
+	if !ok {
+		t.Fatalf("expected exec.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.ExitCode() != 5 {
+		t.Errorf("expected exit status 5, got %d", exitErr.ExitCode())
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	content := string(data)
+	count1 := strings.Count(content, "cmd1")
+	count2 := strings.Count(content, "cmd2")
+
+	if count1 != 1 {
+		t.Errorf("expected cmd1 to run 1 time, got %d. Log content:\n%s", count1, content)
+	}
+	if count2 != 1 {
+		t.Errorf("expected cmd2 to run 1 time, got %d. Log content:\n%s", count2, content)
+	}
+}
+
 
 

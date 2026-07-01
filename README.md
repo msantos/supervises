@@ -90,6 +90,7 @@ strategy *string*
   * **on-success**: restart the process only if it exits with a zero status. If a process exits with a non-zero status, it is not restarted, but other processes remain running.
   * **one-for-all** (or `one_for_all`): if a process crashes (exits non-zero), all other processes are terminated and restarted. If a process exits with status 0, it is not restarted, but other processes remain running (transient behavior).
   * **one-for-all-always** (or `one_for_all_always`): if any process exits (normally or via crash), all other processes are terminated, and all processes are restarted (permanent behavior).
+  * **one-for-all-once** (or `one_for_all_once`): if any process exits (normally or via crash), all other processes are terminated and the supervisor exits immediately (no restarts).
   * **rest-for-one** (or `rest_for_one`): if a process crashes (exits non-zero), all processes started after it (in command-line order) are terminated and restarted. If a process exits with status 0, it is not restarted, but other processes remain running (transient behavior).
   * **rest-for-one-always** (or `rest_for_one_always`): if any process exits, all processes started after it are terminated, and all affected processes are restarted (permanent behavior).
 

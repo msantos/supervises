@@ -143,7 +143,7 @@ func main() {
 	restartCount := flag.Int("restart-count", 0, "restart limit before exiting (0: no limit)")
 	restartPeriod := flag.Duration("restart-period", 0, "time interval for restarts (0: no limit)")
 	errExit := flag.Bool("errexit", false, "restarts apply to tasks exiting with a non-0 status")
-	strategy := flag.String("strategy", "always", "restart strategy (always, on-error, on-success, one-for-all, rest-for-one, one-for-all-always, rest-for-one-always)")
+	strategy := flag.String("strategy", "always", "restart strategy (always, on-error, on-success, one-for-all, rest-for-one, one-for-all-always, rest-for-one-always, one-for-all-once)")
 
 	flag.Usage = func() { usage() }
 	flag.Parse()
@@ -158,9 +158,9 @@ func main() {
 	}
 
 	switch *strategy {
-	case "always", "on-error", "on-success", "one-for-all", "one_for_all", "one-for-all-always", "one_for_all_always", "rest-for-one", "rest_for_one", "rest-for-one-always", "rest_for_one_always":
+	case "always", "on-error", "on-success", "one-for-all", "one_for_all", "one-for-all-always", "one_for_all_always", "one-for-all-once", "one_for_all_once", "rest-for-one", "rest_for_one", "rest-for-one-always", "rest_for_one_always":
 	default:
-		fmt.Fprintf(os.Stderr, "invalid strategy: %s (must be one of: always, on-error, on-success, one-for-all, rest-for-one, one-for-all-always, rest-for-one-always)\n", *strategy)
+		fmt.Fprintf(os.Stderr, "invalid strategy: %s (must be one of: always, on-error, on-success, one-for-all, rest-for-one, one-for-all-always, rest-for-one-always, one-for-all-once)\n", *strategy)
 		usage()
 		os.Exit(2)
 	}

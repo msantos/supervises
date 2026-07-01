@@ -95,6 +95,21 @@ func (m *StrategyManager) OnExit(c *supervises.Cmd, e *supervises.ExitError) *su
 			m.terminateAllOthers(c)
 		}
 
+	case "one-for-all-once", "one_for_all_once":
+		if !wasKilled {
+			// Terminate all other processes
+			m.terminateAllOthers(c)
+		}
+		if e == nil {
+			return &supervises.ExitError{
+				Cmd: &exec.Cmd{
+					Path: c.String(),
+				},
+				ExitCode: 0,
+			}
+		}
+		return e
+
 	case "rest-for-one", "rest_for_one":
 		if e == nil {
 			// Success: transient process behavior (don't restart, keep other processes running)
